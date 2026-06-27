@@ -837,7 +837,28 @@ function LeaderBoardTooltip({ emp, anchorRef, visible }) {
 }
 
 // ─── Leader Board ─────────────────────────────────────────────────────────────
-function LeaderBoard({ employees, filterKey }) {
+function buildLeaderboardFromEmployees(employees) {
+  if (!Array.isArray(employees) || !employees.length) return [];
+  return employees
+    .map((emp) => {
+      const leads = Number(emp.leads ?? emp.lead_count ?? emp.call_target ?? 0);
+      const conv = Number(emp.conv ?? emp.deals ?? 0);
+      const convPct = leads ? Math.round((conv / leads) * 100) : 0;
+      return {
+        name: emp.name,
+        leads,
+        conv,
+        convR: `${convPct}%`,
+        qualR: leads ? `${Math.min(99, 100 - convPct)}%` : "0%",
+        resp: "2h",
+        rev: emp.revenue ? `₹${emp.revenue}` : "₹0",
+      };
+    })
+    .sort((a, b) => b.conv - a.conv || b.leads - a.leads)
+    .slice(0, 3);
+}
+
+function LeaderBoard({ employees }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const cardRefs = useRef([]);
   const isMobile = useIsMobile(640);
@@ -851,18 +872,10 @@ function LeaderBoard({ employees, filterKey }) {
         <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/30 py-10 text-center">
           <Trophy className="w-8 h-8 text-rose-300 mx-auto mb-2" />
           <p className="text-sm font-semibold text-slate-600">No performance data yet</p>
-          <p className="text-xs text-slate-400 mt-1">Assign leads to employees to populate the leaderboard.</p>
+          <p className="text-xs text-slate-400 mt-1">Add team members and assign leads to populate the leaderboard.</p>
         </div>
       ) : (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={filterKey}
-          className="grid grid-cols-3 gap-1.5 sm:gap-3"
-          initial="hidden"
-          animate="show"
-          exit="hidden"
-          variants={staggerContainer}
-        >
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
           {topPerformers.map((emp, i) => {
             const rank = LEADERBOARD_RANKS[i] || LEADERBOARD_RANKS[2];
             const convPct = getConvPct(emp);
@@ -871,15 +884,11 @@ function LeaderBoard({ employees, filterKey }) {
 
             return (
               <div key={`${emp.name}-${i}`} className="relative min-w-0">
-                <motion.div
+                <div
                   ref={(el) => { cardRefs.current[i] = el; }}
-                  variants={fadeUp}
-                  custom={i}
                   onMouseEnter={() => setHoveredIdx(i)}
                   onMouseLeave={() => setHoveredIdx(null)}
                   onClick={() => setHoveredIdx((prev) => (prev === i ? null : i))}
-                  animate={{ y: hoveredIdx === i ? -2 : 0 }}
-                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                   className="rounded-lg sm:rounded-xl bg-slate-50/60 border border-slate-200/80 hover:border-slate-300 hover:bg-white transition-all duration-200 cursor-default flex flex-col items-center justify-center py-2.5 sm:py-4 px-1 sm:px-3 gap-1.5 sm:gap-2.5 min-h-[128px] sm:min-h-[168px]"
                 >
                   <div className={`inline-flex items-center gap-0.5 sm:gap-1 text-[7px] sm:text-[9px] font-bold uppercase tracking-wide sm:tracking-widest px-1.5 sm:px-2 py-0.5 rounded-full border ${rank.badge}`}>
@@ -892,7 +901,7 @@ function LeaderBoard({ employees, filterKey }) {
                     size={donutSize}
                     stroke={donutStroke}
                     fontSize={isMobile ? 11 : 16}
-                    gradientId={`leader-gradient-${filterKey}-${i}`}
+                    gradientId={`leader-gradient-${i}`}
                     colors={rank.colors}
                     textColor={rank.textColor}
                   />
@@ -903,7 +912,7 @@ function LeaderBoard({ employees, filterKey }) {
                       {emp.conv} conv · {emp.rev}
                     </p>
                   </div>
-                </motion.div>
+                </div>
 
                 <LeaderBoardTooltip
                   emp={emp}
@@ -913,8 +922,7 @@ function LeaderBoard({ employees, filterKey }) {
               </div>
             );
           })}
-        </motion.div>
-      </AnimatePresence>
+        </div>
       )}
     </div>
   );
@@ -2146,11 +2154,22 @@ export default function Dashboard() {
   const { preset } = useDateRange();
   const [selectedService, setSelectedService] = useState("All Services");
   const [apiFilterData, setApiFilterData] = useState(null);
+  const [teamEmployees, setTeamEmployees] = useState([]);
   const [chartRevenue, setChartRevenue] = useState(revenueSeries);
 
   const filterKey = preset === "custom" ? "week" : preset;
   const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
   const fd        = mergedFilter[filterKey];
+
+  const leaderboardData = useMemo(() => {
+    const fromFilter = fd?.leaderboard;
+    if (fromFilter?.length) return fromFilter.slice(0, 3);
+    const fromMock = FILTER_DATA[filterKey]?.leaderboard;
+    if (fromMock?.length) return fromMock.slice(0, 3);
+    const fromTeam = buildLeaderboardFromEmployees(teamEmployees);
+    if (fromTeam.length) return fromTeam;
+    return FILTER_DATA.week.leaderboard.slice(0, 3);
+  }, [fd?.leaderboard, filterKey, teamEmployees]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2163,9 +2182,17 @@ export default function Dashboard() {
       } catch {
         // keep inline mock fallback
       }
+      try {
+        const team = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
+        if (!cancelled && team.success && team.employees?.length) {
+          setTeamEmployees(team.employees);
+        }
+      } catch {
+        // ignore
+      }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [filterKey]);
 
   // Reset service filter when time filter changes
   useEffect(() => { setSelectedService("All Services"); }, [filterKey]);
@@ -2185,7 +2212,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,_36%)] gap-3 sm:gap-4 items-start min-w-0">
 
         <div className="flex flex-col gap-3 sm:gap-4 min-w-0">
-          <LeaderBoard employees={fd.leaderboard} filterKey={filterKey} />
+          <LeaderBoard employees={leaderboardData} />
 
           <LeadPipeline
             pipelineData={pipelineData}
