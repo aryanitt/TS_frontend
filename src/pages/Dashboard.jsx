@@ -867,14 +867,14 @@ function buildLeaderboardFromEmployees(employees) {
       };
     })
     .sort((a, b) => b.conv - a.conv || b.leads - a.leads || a.name.localeCompare(b.name))
-    .slice(0, 5);
+    .slice(0, 3);
 }
 
 function LeaderBoard({ employees }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const cardRefs = useRef([]);
   const isMobile = useIsMobile(640);
-  const topPerformers = (Array.isArray(employees) ? employees : []).slice(0, 5);
+  const topPerformers = (Array.isArray(employees) ? employees : []).slice(0, 3);
 
   return (
     <div className={`${PANEL} p-3 sm:p-4 md:p-5 min-w-0`}>
@@ -887,7 +887,7 @@ function LeaderBoard({ employees }) {
           <p className="text-xs text-slate-400 mt-1">Add team members and assign leads to populate the leaderboard.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-3">
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
           {topPerformers.map((emp, i) => {
             const rank = LEADERBOARD_RANKS[i] || LEADERBOARD_RANKS[2];
             const convPct = getConvPct(emp);
@@ -2202,10 +2202,10 @@ export default function Dashboard() {
     const fromTeam = buildLeaderboardFromEmployees(teamEmployees);
     if (fromTeam.length) return fromTeam;
     const fromFilter = fd?.leaderboard;
-    if (fromFilter?.length) return fromFilter.slice(0, 5);
+    if (fromFilter?.length) return fromFilter.slice(0, 3);
     const fromMock = FILTER_DATA[filterKey]?.leaderboard;
-    if (fromMock?.length) return fromMock.slice(0, 5);
-    return FILTER_DATA.week.leaderboard.slice(0, 5);
+    if (fromMock?.length) return fromMock.slice(0, 3);
+    return FILTER_DATA.week.leaderboard.slice(0, 3);
   }, [fd?.leaderboard, filterKey, teamEmployees]);
 
   useEffect(() => {
