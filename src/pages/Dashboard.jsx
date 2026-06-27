@@ -272,6 +272,13 @@ const fadeUp = {
   }),
 };
 
+const staggerContainer = {
+  hidden: {},
+  show: {
+    transition: { staggerChildren: 0.06 },
+  },
+};
+
 // ─── Tiny hook: track if viewport is mobile (< 640px) ─────────────────────────
 function useIsMobile(bp = 640) {
   const [isMobile, setIsMobile] = useState(
@@ -536,7 +543,7 @@ function KPICardsRow({ kpiData, filterKey }) {
         initial="hidden"
         animate="show"
         exit="hidden"
-        variants={{ show: { transition: { staggerChildren: 0.06 } } }}
+        variants={staggerContainer}
       >
         {kpiData.map((k, i) => {
           const Icon = iconMap[k.icon] || DollarSign;
@@ -834,11 +841,19 @@ function LeaderBoard({ employees, filterKey }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const cardRefs = useRef([]);
   const isMobile = useIsMobile(640);
+  const topPerformers = (Array.isArray(employees) ? employees : []).slice(0, 3);
 
   return (
     <div className={`${PANEL} p-3 sm:p-4 md:p-5 min-w-0`}>
       <SectionHead icon={Trophy} title="Leader Board" sub="Top performers by conversion rate" />
 
+      {topPerformers.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/30 py-10 text-center">
+          <Trophy className="w-8 h-8 text-rose-300 mx-auto mb-2" />
+          <p className="text-sm font-semibold text-slate-600">No performance data yet</p>
+          <p className="text-xs text-slate-400 mt-1">Assign leads to employees to populate the leaderboard.</p>
+        </div>
+      ) : (
       <AnimatePresence mode="wait">
         <motion.div
           key={filterKey}
@@ -846,16 +861,16 @@ function LeaderBoard({ employees, filterKey }) {
           initial="hidden"
           animate="show"
           exit="hidden"
-          variants={{ show: { transition: { staggerChildren: 0.06 } } }}
+          variants={staggerContainer}
         >
-          {employees.map((emp, i) => {
+          {topPerformers.map((emp, i) => {
             const rank = LEADERBOARD_RANKS[i] || LEADERBOARD_RANKS[2];
             const convPct = getConvPct(emp);
             const donutSize = isMobile ? 56 : 76;
             const donutStroke = isMobile ? 5 : 6;
 
             return (
-              <div key={emp.name} className="relative min-w-0">
+              <div key={`${emp.name}-${i}`} className="relative min-w-0">
                 <motion.div
                   ref={(el) => { cardRefs.current[i] = el; }}
                   variants={fadeUp}
@@ -900,6 +915,7 @@ function LeaderBoard({ employees, filterKey }) {
           })}
         </motion.div>
       </AnimatePresence>
+      )}
     </div>
   );
 }
