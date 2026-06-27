@@ -16,6 +16,10 @@ import {
   formatFollowUpSchedule,
   buildFollowUpTaskName,
   followUpPriority,
+  callToApiPayload,
+  callFromApi,
+  followUpToApiPayload,
+  followUpFromApi,
 } from "../data/employeeMock.js";
 import { apiGet, apiPost, apiPut, apiPatch, invalidateCache } from "../lib/api.js";
 import { getCrmHeaders, mapApiEmployee, storeEmployee } from "../lib/crmContext.js";
@@ -86,10 +90,17 @@ export function EmployeeProvider({ children }) {
       if (Array.isArray(data.tasks)) {
         setTasksState(tasksMapFromApi(data.tasks, empProfile));
       }
-      if (data.followups?.length) {
-        setFollowUpsState(data.followups.map((f) => ({ ...f, done: f.status === "completed" })));
+      const workspaceLeads = Array.isArray(data.leads)
+        ? data.leads.map((l) => apiLeadToEmployee(l))
+        : [];
+      if (Array.isArray(data.followups)) {
+        setFollowUpsState(
+          data.followups.map((f) => followUpFromApi(f, workspaceLeads)),
+        );
       }
-      if (data.calls?.length) setCalls(data.calls);
+      if (Array.isArray(data.calls)) {
+        setCalls(data.calls.map((c) => callFromApi(c, workspaceLeads)));
+      }
       return true;
     } catch {
       return false;
@@ -286,12 +297,31 @@ export function EmployeeProvider({ children }) {
     });
   }, []);
 
-  const addCallRecord = useCallback((newCall) => {
-    setCalls((prev) => [newCall, ...prev]);
-    if (usingApi) {
-      apiPost("/api/v1/employee/calls", newCall, { headers: getCrmHeaders() }).catch(() => {});
+  const addCallRecord = useCallback(async (newCall) => {
+    const tempId = newCall.id || Date.now();
+    const optimistic = { ...newCall, id: tempId };
+    setCalls((prev) => [optimistic, ...prev]);
+
+    if (!usingApi) return;
+
+    if (!newCall.leadId) {
+      setCalls((prev) => prev.filter((c) => c.id !== tempId));
+      toast.error("Could not save call — select a valid lead");
+      return;
     }
-  }, [usingApi]);
+
+    try {
+      const payload = callToApiPayload(newCall, employee.id);
+      const res = await apiPost("/api/v1/employee/calls", payload, { headers: getCrmHeaders() });
+      const saved = unwrapApiData(res) || res.data || res;
+      const mapped = callFromApi(saved, leads);
+      setCalls((prev) => [mapped, ...prev.filter((c) => c.id !== tempId)]);
+      invalidateCache("/api/v1");
+    } catch (err) {
+      setCalls((prev) => prev.filter((c) => c.id !== tempId));
+      toast.error(err.message || "Could not save call to server");
+    }
+  }, [usingApi, employee.id, leads]);
 
   const addActivityRecord = useCallback((leadId, newEvent) => {
     setActivities((prev) => {
@@ -301,14 +331,56 @@ export function EmployeeProvider({ children }) {
     });
   }, []);
 
-  const scheduleFollowUp = useCallback(({ leadName, company, type, date, time, note, leadId }) => {
+  const scheduleFollowUp = useCallback(async ({ leadName, company, type, date, time, note, leadId }) => {
     const lead = leads.find((l) => l.name === leadName || l.id === leadId);
-    const id = Date.now();
-    const taskId = id + 1;
+    const resolvedLeadId = leadId ?? lead?.id;
     const urgency = getFollowUpUrgency(date);
     const resolvedCompany = company || lead?.company || "—";
     const av = lead?.av || initialsFromName(leadName);
     const color = lead?.color || "#64748b";
+
+    if (usingApi) {
+      if (!resolvedLeadId) {
+        toast.error("Select a valid lead to schedule follow-up");
+        return null;
+      }
+      try {
+        const payload = followUpToApiPayload(
+          { leadName, company, type, date, time, note, leadId: resolvedLeadId },
+          employee.id,
+          leads,
+        );
+        const res = await apiPost("/api/v1/employee/followups", payload, { headers: getCrmHeaders() });
+        const saved = unwrapApiData(res) || res.data || res;
+        const followUp = { ...followUpFromApi(saved, leads, type), company: resolvedCompany, av, color };
+        const task = {
+          id: saved.taskId,
+          name: buildFollowUpTaskName({ type, name: leadName, note }),
+          done: false,
+          priority: followUpPriority(urgency),
+          assignee: employee.name,
+          assigneeAv: employee.initials,
+          assigneeColor: employee.avatarColor,
+          deadline: time,
+          source: "followup",
+          followUpId: saved.id,
+        };
+
+        setFollowUps((prev) => [...prev, followUp]);
+        setTasks((prev) => ({
+          ...prev,
+          [date]: [...(prev[date] || []), task],
+        }));
+        invalidateCache("/api/v1");
+        return followUp;
+      } catch (err) {
+        toast.error(err.message || "Could not save follow-up to server");
+        return null;
+      }
+    }
+
+    const id = Date.now();
+    const taskId = id + 1;
 
     const followUp = {
       id,
@@ -324,7 +396,7 @@ export function EmployeeProvider({ children }) {
       scheduledTime: time,
       done: false,
       taskId,
-      leadId: lead?.id ?? leadId,
+      leadId: resolvedLeadId,
     };
 
     const task = {
@@ -347,9 +419,9 @@ export function EmployeeProvider({ children }) {
     }));
 
     return followUp;
-  }, [employee, leads, setFollowUps, setTasks]);
+  }, [employee, leads, setFollowUps, setTasks, usingApi]);
 
-  const completeFollowUp = useCallback((followUpId) => {
+  const completeFollowUp = useCallback(async (followUpId) => {
     setFollowUps((prev) => prev.map((f) => (f.id === followUpId ? { ...f, done: true } : f)));
     setTasks((prev) => {
       const next = { ...prev };
@@ -360,11 +432,22 @@ export function EmployeeProvider({ children }) {
       });
       return next;
     });
-  }, [setFollowUps, setTasks]);
 
-  const syncTaskWithFollowUp = useCallback((date, taskId, done) => {
+    if (!usingApi || !followUpId) return;
+
+    try {
+      await apiPatch(`/api/v1/employee/followups/${followUpId}/complete`, {}, { headers: getCrmHeaders() });
+      invalidateCache("/api/v1");
+    } catch (err) {
+      toast.error(err.message || "Could not mark follow-up complete on server");
+    }
+  }, [setFollowUps, setTasks, usingApi]);
+
+  const syncTaskWithFollowUp = useCallback(async (date, taskId, done) => {
+    let linkedFollowUpId;
     setTasks((prev) => {
       const task = prev[date]?.find((t) => t.id === taskId);
+      linkedFollowUpId = task?.followUpId;
       const dayTasks = prev[date] || [];
       const next = {
         ...prev,
@@ -377,7 +460,16 @@ export function EmployeeProvider({ children }) {
       }
       return next;
     });
-  }, [setTasks, setFollowUps]);
+
+    if (usingApi && done && linkedFollowUpId) {
+      try {
+        await apiPatch(`/api/v1/employee/followups/${linkedFollowUpId}/complete`, {}, { headers: getCrmHeaders() });
+        invalidateCache("/api/v1");
+      } catch {
+        /* task status already saved via updateTaskStatus */
+      }
+    }
+  }, [setTasks, setFollowUps, usingApi]);
 
   const addLead = useCallback(async (form) => {
     const localLead = form.lead_name || form.company_name

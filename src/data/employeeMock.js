@@ -603,6 +603,143 @@ export function findEmpTeamMember(name) {
   );
 }
 
+function initialsFromLeadName(name) {
+  if (!name) return "?";
+  return String(name).split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
+export function parseDurationToSeconds(value) {
+  if (value == null || value === "" || value === "—") return 0;
+  if (typeof value === "number") return value;
+  const parts = String(value).split(":").map(Number);
+  if (parts.length === 2 && !Number.isNaN(parts[0])) {
+    return parts[0] * 60 + (parts[1] || 0);
+  }
+  return 0;
+}
+
+export function formatDurationFromSeconds(totalSecs) {
+  if (!totalSecs) return "—";
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+export function callToApiPayload(call, employeeId) {
+  const durationSec = call.durationSec ?? parseDurationToSeconds(call.duration);
+  const now = new Date();
+  const typeToDir = { in: "inbound", out: "outbound", miss: "outbound" };
+  const checklistProgress = call.checkedQuestions
+    ? Object.entries(call.checkedQuestions)
+      .filter(([, done]) => done)
+      .map(([stepId]) => ({ stepId, done: true, at: now.toISOString() }))
+    : call.checklistProgress;
+
+  return {
+    leadId: call.leadId,
+    employeeId,
+    direction: typeToDir[call.type] || call.direction || "outbound",
+    outcome: call.outcome || null,
+    durationSec: durationSec || null,
+    startedAt: call.startedAt || now.toISOString(),
+    endedAt: call.endedAt || now.toISOString(),
+    notes: call.note || call.notes || null,
+    aiSummary: call.note || call.aiSummary || null,
+    sopId: call.sopId || null,
+    checklistProgress,
+  };
+}
+
+export function callFromApi(apiCall, leads = []) {
+  const lead = leads.find((l) => String(l.id) === String(apiCall.leadId));
+  const created = apiCall.startedAt || apiCall.createdAt;
+  const createdDate = created ? new Date(created) : new Date();
+  const today = getEmpAppToday();
+  const callDay = Number.isNaN(createdDate.getTime())
+    ? today
+    : createdDate.toISOString().slice(0, 10);
+
+  let period = "month";
+  if (callDay === today) {
+    period = "today";
+  } else {
+    const diff = (new Date(`${today}T00:00:00`) - new Date(`${callDay}T00:00:00`)) / 86400000;
+    if (diff >= 0 && diff <= 7) period = "week";
+  }
+
+  const dateLabel = callDay === today
+    ? `Today ${createdDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    : `${createdDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} ${createdDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+
+  const dir = apiCall.direction === "inbound" ? "in" : "out";
+
+  return {
+    id: apiCall.id,
+    leadId: apiCall.leadId,
+    name: lead?.name || lead?.leadName || "Unknown Lead",
+    company: lead?.company || lead?.companyName || "—",
+    duration: formatDurationFromSeconds(apiCall.durationSec),
+    type: dir,
+    date: dateLabel,
+    period,
+    outcome: apiCall.outcome || "Call logged",
+    hasRec: Boolean(apiCall.recordingUrl) || Boolean(apiCall.aiSummary || apiCall.notes),
+    rating: 0,
+    mood: "neutral",
+    phone: lead?.phone || "",
+    note: apiCall.aiSummary || apiCall.notes || "",
+    sopId: apiCall.sopId,
+  };
+}
+
+export function followUpToApiPayload(params, employeeId, leads = []) {
+  const { leadName, type, date, time, note, leadId } = params;
+  const lead = leads.find((l) => l.id === leadId || l.name === leadName);
+  const resolvedLeadId = leadId ?? lead?.id;
+  if (!resolvedLeadId) {
+    throw new Error("Select a valid lead to schedule follow-up");
+  }
+
+  return {
+    leadId: resolvedLeadId,
+    employeeId,
+    scheduledAt: `${date}T${time || "09:00"}:00`,
+    note: note?.trim() || `${type} follow-up scheduled`,
+    title: buildFollowUpTaskName({ type, name: leadName, note }),
+    priority: priorityToApi(followUpPriority(getFollowUpUrgency(date))),
+  };
+}
+
+export function followUpFromApi(apiFollowup, leads = [], type = "Follow-up") {
+  const lead = leads.find((l) => String(l.id) === String(apiFollowup.leadId));
+  const scheduled = apiFollowup.scheduledAt ? new Date(apiFollowup.scheduledAt) : new Date();
+  const dateStr = Number.isNaN(scheduled.getTime())
+    ? getEmpAppToday()
+    : scheduled.toISOString().slice(0, 10);
+  const timeStr = Number.isNaN(scheduled.getTime())
+    ? "09:00"
+    : `${String(scheduled.getHours()).padStart(2, "0")}:${String(scheduled.getMinutes()).padStart(2, "0")}`;
+  const urgency = getFollowUpUrgency(dateStr);
+  const leadName = lead?.name || lead?.leadName || "Lead";
+
+  return {
+    id: apiFollowup.id,
+    name: leadName,
+    company: lead?.company || lead?.companyName || "—",
+    type,
+    urgency,
+    time: formatFollowUpSchedule(dateStr, timeStr),
+    av: lead?.av || initialsFromLeadName(leadName),
+    color: lead?.color || "#64748b",
+    note: apiFollowup.note || "",
+    scheduledDate: dateStr,
+    scheduledTime: timeStr,
+    done: apiFollowup.status === "completed",
+    taskId: apiFollowup.taskId,
+    leadId: apiFollowup.leadId,
+  };
+}
+
 export function normalizeTasksMap(value, { useMockFallback = true } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return useMockFallback ? createInitialTasks() : {};

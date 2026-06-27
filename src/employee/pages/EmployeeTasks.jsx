@@ -571,7 +571,7 @@ export default function EmployeeTasks() {
             const d = new Date(`${date}T00:00:00`);
             const done = items.filter((t) => t.done).length;
             const pct = items.length ? Math.round((done / items.length) * 100) : 0;
-            const isToday = date === EMP_APP_TODAY;
+            const isToday = date === getEmpAppToday();
 
             return (
               <section key={date}>

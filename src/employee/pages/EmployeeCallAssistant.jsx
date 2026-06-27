@@ -247,10 +247,15 @@ AI Insights & Follow-up Actions:
   };
 
   const handleSaveCallToLogs = () => {
+    if (!matchedLead?.id) {
+      toast.error("Select a lead from your pipeline before saving this call");
+      return;
+    }
+
     const callId = Date.now();
     const newCallLog = {
       id: callId,
-      leadId: matchedLead ? matchedLead.id : 1,
+      leadId: matchedLead.id,
       name: leadName,
       company: companyName,
       duration: formatDuration(callDuration),
@@ -261,7 +266,7 @@ AI Insights & Follow-up Actions:
       hasRec: true,
       rating: callRating,
       mood: callLeadTemp,
-      phone: matchedLead ? matchedLead.phone : `+91 ${Math.floor(6000000000 + Math.random() * 4000000000)}`,
+      phone: matchedLead.phone || "",
       note: aiMoM,
       sopId: selectedSopId,
       checkedQuestions: checkedQuestions,
