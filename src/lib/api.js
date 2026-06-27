@@ -7,12 +7,19 @@ const CACHE_PREFIX = "crm_cache:";
 const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
 const memoryCache = new Map();
 
+/** Hostinger backend — used when VITE_API_URL is missing from the Vercel build. */
+const PRODUCTION_API_BASE =
+  "https://mediumturquoise-capybara-737767.hostingersite.com";
+
 export function getApiBase() {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl != null && String(envUrl).trim() !== "") {
     return String(envUrl).replace(/\/$/, "");
   }
-  // Dev: Vite proxy `/api` → backend. Production: relative `/api` on same domain.
+  if (import.meta.env.PROD) {
+    return PRODUCTION_API_BASE;
+  }
+  // Dev: Vite proxy `/api` → backend on localhost:5000.
   return "";
 }
 
@@ -133,13 +140,19 @@ export async function apiJson(path, options = {}) {
 
   const response = await performFetch(url, { ...fetchOptions, method: httpMethod });
 
-  let data;
   const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    data = await response.json();
-  } else {
-    data = await response.text();
+  if (!contentType.includes("application/json")) {
+    const preview = (await response.text()).slice(0, 80);
+    const err = new Error(
+      preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")
+        ? "API request hit the frontend instead of the backend. Check VITE_API_URL."
+        : `Expected JSON from API but got ${contentType || "unknown type"}`,
+    );
+    err.status = response.status;
+    throw err;
   }
+
+  const data = await response.json();
 
   if (!response.ok) {
     const message = data?.message || data?.error || response.statusText || "Request failed";
