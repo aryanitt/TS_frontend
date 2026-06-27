@@ -1762,7 +1762,7 @@ function RecentActivityPanel({ items, filterKey }) {
           initial="hidden"
           animate="show"
           exit="hidden"
-          variants={{ show: { transition: { staggerChildren: 0.04 } } }}
+          variants={staggerContainer}
         >
           {items.map((item, i) => {
             const config = getActivityIconConfig(item.text);
