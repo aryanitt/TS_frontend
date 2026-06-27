@@ -37,21 +37,40 @@ function MetricTile({ label, value, sub, icon: Icon, iconBg, iconColor }) {
 
 function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd }) {
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
+  const suppressClickRef = useRef(false);
 
   return (
     <div
       draggable
       onDragStart={(e) => {
+        suppressClickRef.current = false;
         e.dataTransfer.setData("text/lead-id", lead.id);
         e.dataTransfer.effectAllowed = "move";
         onDragStart?.();
       }}
-      onDragEnd={onDragEnd}
+      onDrag={() => {
+        suppressClickRef.current = true;
+      }}
+      onDragEnd={() => {
+        onDragEnd?.();
+      }}
       className={`rounded-xl border border-rose-100 bg-white transition group ${
         isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"
       }`}
     >
-      <button type="button" onClick={onOpen} className="w-full text-left p-3">
+      <button
+        type="button"
+        onClick={(e) => {
+          if (suppressClickRef.current) {
+            suppressClickRef.current = false;
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          onOpen?.();
+        }}
+        className="w-full text-left p-3"
+      >
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
             <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{lead.name}</p>
