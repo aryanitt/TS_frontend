@@ -6,7 +6,11 @@ import express from "express";
 import { toNodeHandler } from "srvx/node";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isPassenger = typeof PhusionPassenger !== "undefined";
+const isPassenger =
+  typeof globalThis.PhusionPassenger !== "undefined" ||
+  typeof PhusionPassenger !== "undefined" ||
+  Boolean(process.env.PASSENGER_APP_ENV) ||
+  Boolean(process.env.PASSENGER_BASE_URI);
 const PORT = Number(process.env.PORT || 3000);
 const CLIENT_DIR = path.join(__dirname, "dist", "client");
 const SERVER_ENTRY = path.join(__dirname, "dist", "server", "server.js");
@@ -29,6 +33,7 @@ console.error(
   JSON.stringify({
     port: PORT,
     passenger: isPassenger,
+    serverVersion: 2,
     cwd: process.cwd(),
     node: process.version,
     clientExists: fs.existsSync(CLIENT_DIR),

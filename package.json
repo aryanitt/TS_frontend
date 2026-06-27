@@ -12,7 +12,6 @@
     "build:hostinger": "npm install --include=dev && npm run build",
     "build:dev": "vite build --mode development",
     "postinstall": "node scripts/fix-esbuild-perms.mjs",
-    "prestart": "node scripts/ensure-build.mjs",
     "preview": "node server.js",
     "start": "node server.js",
     "lint": "eslint .",
