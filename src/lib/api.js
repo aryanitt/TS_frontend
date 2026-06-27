@@ -23,6 +23,11 @@ export function getApiBase() {
   return "";
 }
 
+/** True when writes should go to the backend (production API or live session). */
+export function shouldPersistToApi(usingApi = false) {
+  return usingApi || Boolean(getApiBase());
+}
+
 export function apiUrl(path) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const base = getApiBase();

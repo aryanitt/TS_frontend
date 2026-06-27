@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge, Drawer } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { EMP_SOP_CHECKLIST, getEmpAppToday, EMP_TEAM, isTaskAssignedToEmployee, formatTaskDeadlineTime, findEmpTeamMember } from "../../data/employeeMock.js";
+import { shouldPersistToApi } from "../../lib/api.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
   EmpEmptyState, BtnPrimary, BtnSecondary, AvatarCircle,
@@ -373,7 +374,7 @@ export default function EmployeeTasks() {
           createdBy: employee?.name || assigneeName,
         },
       });
-      if (saved === null && usingApi) return;
+      if (saved === null && shouldPersistToApi(usingApi)) return;
       closeDrawer();
       setNewTask(resetNewTask());
       toast.success(

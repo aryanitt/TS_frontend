@@ -21,7 +21,7 @@ import {
   followUpToApiPayload,
   followUpFromApi,
 } from "../data/employeeMock.js";
-import { apiGet, apiPost, apiPut, apiPatch, invalidateCache } from "../lib/api.js";
+import { apiGet, apiPost, apiPut, apiPatch, invalidateCache, shouldPersistToApi } from "../lib/api.js";
 import { getCrmHeaders, mapApiEmployee, storeEmployee } from "../lib/crmContext.js";
 import {
   apiLeadToEmployee,
@@ -101,6 +101,7 @@ export function EmployeeProvider({ children }) {
       if (Array.isArray(data.calls)) {
         setCalls(data.calls.map((c) => callFromApi(c, workspaceLeads)));
       }
+      setUsingApi(true);
       return true;
     } catch {
       return false;
@@ -124,8 +125,18 @@ export function EmployeeProvider({ children }) {
           const mapped = { ...CURRENT_EMPLOYEE, ...mapApiEmployee(matched) };
           setEmployee(mapped);
           storeEmployee(mapped);
-          const ok = await refreshLeads(mapped.id);
-          await loadEmployeeWorkspace(mapped.id, mapped);
+          setUsingApi(true);
+
+          try {
+            await refreshLeads(mapped.id);
+          } catch {
+            /* leads may load on next refresh */
+          }
+          try {
+            await loadEmployeeWorkspace(mapped.id, mapped);
+          } catch {
+            /* workspace partial load is ok */
+          }
           try {
             const sopRes = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
             if (sopRes.success && sopRes.sops?.length) {
@@ -139,7 +150,7 @@ export function EmployeeProvider({ children }) {
           } catch {
             /* keep ALL_EMP_SOPS fallback */
           }
-          if (ok && !cancelled) {
+          if (!cancelled) {
             setLoading(false);
             return;
           }
@@ -195,16 +206,21 @@ export function EmployeeProvider({ children }) {
   const createTask = useCallback(async ({ date, task }) => {
     const tempId = Date.now();
     const localTask = { ...task, id: tempId };
+    const persist = shouldPersistToApi(usingApi);
 
     setTasksState((prev) => ({
       ...prev,
       [date]: [...(prev[date] || []), localTask],
     }));
 
-    if (!usingApi) return localTask;
+    if (!persist) return localTask;
 
     try {
       const assigneeId = await resolveAssigneeId(task.assignee);
+      if (!assigneeId) {
+        throw new Error("Could not resolve assignee for this task");
+      }
+
       const res = await apiPost("/api/v1/employee/tasks", {
         assigneeId,
         title: task.name,
@@ -214,17 +230,19 @@ export function EmployeeProvider({ children }) {
       }, { headers: getCrmHeaders() });
 
       const saved = unwrapApiData(res) || res?.data || res;
-      const savedId = saved?.id ?? saved?.taskId;
-      if (savedId) {
-        setTasksState((prev) => ({
-          ...prev,
-          [date]: (prev[date] || []).map((t) => (
-            t.id === tempId ? { ...localTask, id: savedId } : t
-          )),
-        }));
-        invalidateCache("/api/v1");
-        return { ...localTask, id: savedId };
+      const savedId = saved?.id ?? saved?.taskId ?? saved?._id;
+      if (!savedId) {
+        throw new Error("Task was not saved — server returned no task id");
       }
+
+      setTasksState((prev) => ({
+        ...prev,
+        [date]: (prev[date] || []).map((t) => (
+          t.id === tempId ? { ...localTask, id: savedId } : t
+        )),
+      }));
+      invalidateCache("/api/v1");
+      return { ...localTask, id: savedId };
     } catch (err) {
       setTasksState((prev) => ({
         ...prev,
@@ -233,8 +251,6 @@ export function EmployeeProvider({ children }) {
       toast.error(err.message || "Could not save task to server");
       return null;
     }
-
-    return localTask;
   }, [employee, resolveAssigneeId, usingApi]);
 
   const updateTaskStatus = useCallback(async (date, taskId, done) => {
@@ -243,7 +259,7 @@ export function EmployeeProvider({ children }) {
       [date]: (prev[date] || []).map((t) => (t.id === taskId ? { ...t, done } : t)),
     }));
 
-    if (!usingApi || !taskId) return;
+    if (!shouldPersistToApi(usingApi) || !taskId) return;
 
     try {
       await apiPatch(`/api/v1/employee/tasks/${taskId}`, {
@@ -264,7 +280,7 @@ export function EmployeeProvider({ children }) {
       [date]: (prev[date] || []).filter((t) => t.id !== taskId),
     }));
 
-    if (!usingApi || !taskId) return;
+    if (!shouldPersistToApi(usingApi) || !taskId) return;
 
     try {
       await apiPatch(`/api/v1/employee/tasks/${taskId}`, {
@@ -303,7 +319,7 @@ export function EmployeeProvider({ children }) {
     const optimistic = { ...newCall, id: tempId };
     setCalls((prev) => [optimistic, ...prev]);
 
-    if (!usingApi) return;
+    if (!shouldPersistToApi(usingApi)) return;
 
     if (!newCall.leadId) {
       setCalls((prev) => prev.filter((c) => c.id !== tempId));
@@ -340,7 +356,7 @@ export function EmployeeProvider({ children }) {
     const av = lead?.av || initialsFromName(leadName);
     const color = lead?.color || "#64748b";
 
-    if (usingApi) {
+    if (shouldPersistToApi(usingApi)) {
       if (!resolvedLeadId) {
         toast.error("Select a valid lead to schedule follow-up");
         return null;
@@ -434,7 +450,7 @@ export function EmployeeProvider({ children }) {
       return next;
     });
 
-    if (!usingApi || !followUpId) return;
+    if (!shouldPersistToApi(usingApi) || !followUpId) return;
 
     try {
       await apiPatch(`/api/v1/employee/followups/${followUpId}/complete`, {}, { headers: getCrmHeaders() });
@@ -462,7 +478,7 @@ export function EmployeeProvider({ children }) {
       return next;
     });
 
-    if (usingApi && done && linkedFollowUpId) {
+    if (shouldPersistToApi(usingApi) && done && linkedFollowUpId) {
       try {
         await apiPatch(`/api/v1/employee/followups/${linkedFollowUpId}/complete`, {}, { headers: getCrmHeaders() });
         invalidateCache("/api/v1");
@@ -495,7 +511,7 @@ export function EmployeeProvider({ children }) {
         };
       })();
 
-    if (usingApi) {
+    if (shouldPersistToApi(usingApi)) {
       try {
         const res = await apiPost("/api/v1/leads", {
           leadName: localLead.name,
@@ -540,7 +556,7 @@ export function EmployeeProvider({ children }) {
       return { ...l, stage: stageLabel, status: patch.employeeStatus };
     }));
 
-    if (usingApi) {
+    if (shouldPersistToApi(usingApi)) {
       try {
         await apiPatch(`/api/v1/leads/${leadId}/stage`, {
           stage: stageLabel,
@@ -556,7 +572,7 @@ export function EmployeeProvider({ children }) {
   const updateLeadTemperature = useCallback(async (leadId, nextStatus) => {
     setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, status: nextStatus } : l)));
 
-    if (usingApi) {
+    if (shouldPersistToApi(usingApi)) {
       try {
         await apiPut(`/api/v1/leads/${leadId}`, {
           temperature: temperatureToApi(nextStatus),
