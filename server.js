@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { ensureBuild } from "./scripts/ensure-build.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || "3000";
@@ -31,16 +30,9 @@ const bootInfo = {
 
 console.error("[frontend] booting", JSON.stringify(bootInfo));
 
-try {
-  ensureBuild();
-} catch (error) {
-  console.error("[frontend] FATAL:", error.message || error);
-  process.exit(1);
-}
-
 if (!fs.existsSync(SERVER_ENTRY)) {
   console.error(
-    "[frontend] FATAL: dist/server/server.js missing after build.",
+    "[frontend] FATAL: dist/server/server.js missing. Redeploy after `npm run build` or pull latest main (dist is committed).",
   );
   process.exit(1);
 }

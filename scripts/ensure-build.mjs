@@ -8,36 +8,20 @@ const SERVER_ENTRY = path.join(ROOT, "dist", "server", "server.js");
 const VITE_BIN = path.join(ROOT, "node_modules", "vite", "bin", "vite.js");
 
 function runNode(args) {
-  console.error(`[frontend] running: node ${args.join(" ")}`);
-  const result = spawnSync(process.execPath, args, {
+  return spawnSync(process.execPath, args, {
     cwd: ROOT,
     env: process.env,
     stdio: "inherit",
   });
-
-  if (result.error) {
-    console.error("[frontend] command error:", result.error);
-    return 1;
-  }
-
-  return result.status ?? 1;
 }
 
 function runNpm(args) {
-  console.error(`[frontend] running: npm ${args.join(" ")}`);
-  const result = spawnSync("npm", args, {
+  return spawnSync("npm", args, {
     cwd: ROOT,
     env: process.env,
     stdio: "inherit",
     shell: true,
   });
-
-  if (result.error) {
-    console.error("[frontend] command error:", result.error);
-    return 1;
-  }
-
-  return result.status ?? 1;
 }
 
 export function ensureBuild() {
@@ -45,28 +29,27 @@ export function ensureBuild() {
     return;
   }
 
-  console.error("[frontend] dist/ missing — running production build in", ROOT);
+  // Hostinger runtime cannot execute esbuild (EACCES). Build locally or during deploy only.
+  if (process.env.HOSTINGER || process.env.PASSENGER_APP_ENV) {
+    throw new Error(
+      "dist/ missing on Hostinger — build during deploy (npm run build), not at runtime",
+    );
+  }
+
+  console.error("[frontend] dist/ missing — running local production build");
 
   if (!fs.existsSync(VITE_BIN)) {
-    const installStatus = runNpm(["install", "--include=dev"]);
+    const installStatus = runNpm(["install", "--include=dev"]).status ?? 1;
     if (installStatus !== 0) {
       throw new Error("npm install failed");
     }
   }
 
-  let buildStatus = runNode([VITE_BIN, "build"]);
+  runNode([path.join(ROOT, "scripts", "fix-esbuild-perms.mjs")]);
 
+  const buildStatus = runNode([VITE_BIN, "build"]).status ?? 1;
   if (buildStatus !== 0 || !fs.existsSync(SERVER_ENTRY)) {
-    console.error("[frontend] build failed, reinstalling dev dependencies and retrying");
-    const reinstallStatus = runNpm(["install", "--include=dev"]);
-    if (reinstallStatus !== 0) {
-      throw new Error("npm install --include=dev failed");
-    }
-    buildStatus = runNode([VITE_BIN, "build"]);
-  }
-
-  if (buildStatus !== 0 || !fs.existsSync(SERVER_ENTRY)) {
-    throw new Error("vite build failed — dist/server/server.js still missing");
+    throw new Error("vite build failed");
   }
 
   console.error("[frontend] production build ready");
