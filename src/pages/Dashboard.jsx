@@ -1256,44 +1256,67 @@ function PipelineRow({ rowKey, label, stops, data, bubbleRefs, hoveredBubble, se
   );
 }
 
-function LeadPipeline({ pipelineData, filterKey, selectedService, onServiceChange }) {
+function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChange, loading }) {
   const [hoveredBubble, setHoveredBubble] = useState(null);
   const bubbleRefs = useRef({});
 
-  const data = pipelineData[selectedService] || pipelineData["All Services"];
-  const total = data[0] ?? 0;
-  const closed = data[data.length - 1] ?? 0;
-  const overallConv = total > 0 ? Math.round((closed / total) * 100) : 0;
+  const resolved = useMemo(() => {
+    if (pipelineStats?.grid && (pipelineStats.source === "database" || pipelineStats.source === "empty")) {
+      return pipelineStats;
+    }
 
-  const contacted = data[1] ?? 0;
-  const qualified = data[2] ?? 0;
-  const meeting   = data[3] ?? 0;
-  const negotiation = data[4] ?? 0;
-  const conversion = data[5] ?? 0;
+    const data = SERVICE_PIPELINE[filterKey]?.[selectedService]
+      || SERVICE_PIPELINE[filterKey]?.["All Services"]
+      || [0, 0, 0, 0, 0, 0];
+    const contacted = data[1] ?? 0;
+    const qualified = data[2] ?? 0;
+    const meeting = data[3] ?? 0;
+    const negotiation = data[4] ?? 0;
+    const conversion = data[5] ?? 0;
 
-  const hotData = [
-    Math.round(contacted * 0.45),
-    Math.round(qualified * 0.55),
-    Math.round(meeting * 0.60),
-    Math.round(negotiation * 0.65),
-    Math.round(conversion * 0.70),
-  ];
+    const hot = [
+      Math.round(contacted * 0.45),
+      Math.round(qualified * 0.55),
+      Math.round(meeting * 0.60),
+      Math.round(negotiation * 0.65),
+      Math.round(conversion * 0.70),
+    ];
+    const warm = [
+      Math.round(contacted * 0.35),
+      Math.round(qualified * 0.30),
+      Math.round(meeting * 0.25),
+      Math.round(negotiation * 0.22),
+      Math.round(conversion * 0.20),
+    ];
+    const cold = SEGMENTED_STAGES.map((_, i) =>
+      Math.max(0, [contacted, qualified, meeting, negotiation, conversion][i] - hot[i] - warm[i]),
+    );
 
-  const warmData = [
-    Math.round(contacted * 0.35),
-    Math.round(qualified * 0.30),
-    Math.round(meeting * 0.25),
-    Math.round(negotiation * 0.22),
-    Math.round(conversion * 0.20),
-  ];
+    const grid = {
+      Hot: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, hot[i]])),
+      Warm: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, warm[i]])),
+      Cold: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, cold[i]])),
+    };
 
-  const coldData = [
-    Math.max(0, contacted - hotData[0] - warmData[0]),
-    Math.max(0, qualified - hotData[1] - warmData[1]),
-    Math.max(0, meeting - hotData[2] - warmData[2]),
-    Math.max(0, negotiation - hotData[3] - warmData[3]),
-    Math.max(0, conversion - hotData[4] - warmData[4]),
-  ];
+    const total = pipelineStats?.totalLeads ?? data[0] ?? 0;
+    const closed = pipelineStats?.conversions ?? conversion;
+    const overallConv = total > 0 ? Math.round((closed / total) * 100) : 0;
+
+    return {
+      grid,
+      totalLeads: total,
+      conversions: closed,
+      overallConv,
+      source: pipelineStats?.source || "mock",
+    };
+  }, [pipelineStats, filterKey, selectedService]);
+
+  const hotData = SEGMENTED_STAGES.map((s) => resolved.grid?.Hot?.[s] ?? 0);
+  const warmData = SEGMENTED_STAGES.map((s) => resolved.grid?.Warm?.[s] ?? 0);
+  const coldData = SEGMENTED_STAGES.map((s) => resolved.grid?.Cold?.[s] ?? 0);
+  const total = resolved.totalLeads ?? 0;
+  const closed = resolved.conversions ?? 0;
+  const overallConv = resolved.overallConv ?? 0;
 
   const hotStops = [
     { offset: "0%", color: "#9f1239" },
@@ -2168,6 +2191,8 @@ export default function Dashboard() {
   const [apiFilterData, setApiFilterData] = useState(null);
   const [teamEmployees, setTeamEmployees] = useState([]);
   const [chartRevenue, setChartRevenue] = useState(revenueSeries);
+  const [pipelineStats, setPipelineStats] = useState(null);
+  const [pipelineLoading, setPipelineLoading] = useState(true);
 
   const filterKey = preset === "custom" ? "week" : preset;
   const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
@@ -2206,15 +2231,29 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [filterKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setPipelineLoading(true);
+    const params = new URLSearchParams({ range: filterKey, service: selectedService });
+    apiGet(`/api/dashboard/pipeline-status?${params.toString()}`, { skipCache: true, cacheTtl: 0 })
+      .then((data) => {
+        if (!cancelled && data?.success) setPipelineStats(data);
+      })
+      .catch(() => {
+        if (!cancelled) setPipelineStats(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPipelineLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [filterKey, selectedService]);
+
   // Reset service filter when time filter changes
   useEffect(() => { setSelectedService("All Services"); }, [filterKey]);
 
   // Resolve service breakdown for the current filter + service selection
   const serviceBreakdownData = SERVICE_BREAKDOWN[filterKey];
   const services = serviceBreakdownData[selectedService] || serviceBreakdownData["All Services"];
-
-  // Resolve pipeline data for the current filter + service selection
-  const pipelineData = SERVICE_PIPELINE[filterKey];
 
   return (
     <div className="space-y-4 sm:space-y-5 page-shell min-w-0">
@@ -2227,10 +2266,11 @@ export default function Dashboard() {
           <LeaderBoard employees={leaderboardData} />
 
           <LeadPipeline
-            pipelineData={pipelineData}
+            pipelineStats={pipelineStats}
             filterKey={filterKey}
             selectedService={selectedService}
             onServiceChange={setSelectedService}
+            loading={pipelineLoading}
           />
 
           <RevenueTrajectory data={chartRevenue} />
