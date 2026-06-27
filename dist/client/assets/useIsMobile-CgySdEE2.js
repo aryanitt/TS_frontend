@@ -1,1 +1,0 @@
-import{i as n}from"./vendor-B9C6R7VT.js";function r(e=640){const[t,o]=n.useState(typeof window<"u"?window.innerWidth<e:!1);return n.useEffect(()=>{const i=()=>o(window.innerWidth<e);return window.addEventListener("resize",i),()=>window.removeEventListener("resize",i)},[e]),t}export{r as u};
