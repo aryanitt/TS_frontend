@@ -16,6 +16,7 @@ import {
   patchLead,
   timeAgoShort,
 } from "../../data/pipelineMock.js";
+import { getAssignmentState, getLeadEmployeeName } from "../../lib/leadAssignment.js";
 
 const ACTIVITY_ICONS = {
   created: StickyNote,
@@ -64,6 +65,7 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
 
   if (!lead) return null;
 
+  const employeeName = getLeadEmployeeName(lead, getAssignmentState());
   const stage = getStageMeta(lead.stage);
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
 
@@ -300,7 +302,17 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
                 </div>
                 <div className="min-w-0">
                   <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Owner</p>
-                  <p className="text-xs font-semibold text-slate-800 mt-0.5 truncate">{lead.owner || "—"}</p>
+                  <p className="text-xs font-semibold text-slate-800 mt-0.5 truncate">{employeeName || "—"}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 grid place-items-center shrink-0">
+                  <User className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Employee Name</p>
+                  <p className="text-xs font-semibold text-slate-800 mt-0.5 truncate">{employeeName || "Unassigned"}</p>
                 </div>
               </div>
 
@@ -332,7 +344,7 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
                   return (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-505 flex-wrap">
-                        <span>By: <span className="font-bold text-slate-800">Amit Kumar</span></span>
+                        <span>By: <span className="font-bold text-slate-800">{employeeName || "Unassigned"}</span></span>
                         <span>Date: <span className="font-bold text-slate-800">{latestCall.date}</span></span>
                       </div>
 
@@ -435,7 +447,7 @@ export default function PipelineLeadDrawer({ open, onClose, lead, onUpdateLead, 
                       {/* Employee Contacting info */}
                       <div className="flex items-center gap-2 text-xs font-semibold text-slate-650">
                         <User className="w-4 h-4 text-rose-500 shrink-0" />
-                        <span>Contacted By: <span className="font-bold text-slate-800">Amit Kumar</span> <span className="text-[9.5px] text-slate-400 font-medium">(Sales Manager)</span></span>
+                        <span>Contacted By: <span className="font-bold text-slate-800">{employeeName || "Unassigned"}</span></span>
                       </div>
 
                       {/* Outcome and Mood */}

@@ -18,6 +18,7 @@ import {
   timeAgoShort,
 } from "../data/pipelineMock.js";
 import { apiGet, apiPatch, invalidateCache } from "../lib/api.js";
+import { getAssignmentState, getLeadEmployeeName } from "../lib/leadAssignment.js";
 
 function MetricTile({ label, value, sub, icon: Icon, iconBg, iconColor }) {
   return (
@@ -91,7 +92,15 @@ export default function Pipeline() {
       try {
         const data = await apiGet("/api/dashboard/pipeline/leads", { skipCache: true, cacheTtl: 0 });
         if (cancelled || !data.leads?.length) return;
-        setLeads(data.leads);
+        const assignmentState = getAssignmentState();
+        setLeads(
+          data.leads.map((lead) => {
+            const employeeName = getLeadEmployeeName(lead, assignmentState);
+            return employeeName
+              ? { ...lead, owner: employeeName, assignee: employeeName, employeeName }
+              : lead;
+          }),
+        );
       } catch {
         // keep PIPELINE_LEADS mock
       }

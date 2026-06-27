@@ -88,6 +88,11 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
 
 export function apiLeadToAdmin(lead) {
   const assignedTo = lead.assignedTo;
+  const employeeName =
+    (typeof assignedTo === "object" && assignedTo?.name) ||
+    lead.assigneeName ||
+    lead.assignee_name ||
+    "";
   return {
     id: lead.id,
     lead_name: lead.leadName || lead.lead_name,
@@ -107,6 +112,8 @@ export function apiLeadToAdmin(lead) {
     next_followup_date: lead.nextFollowUpAt || lead.next_follow_up_at,
     requirements: lead.requirements,
     assignedTo,
+    assignee_name: employeeName,
+    employeeName,
     assignment_status: lead.assignmentStatus || lead.assignment_status,
   };
 }
