@@ -45,6 +45,7 @@ export function unwrapApiData(res) {
   if (Array.isArray(res?.items)) return res.items;
   if (Array.isArray(res?.leads)) return res.leads;
   if (Array.isArray(res?.employees)) return res.employees;
+  if (res?.data && typeof res.data === "object") return res.data;
   return res?.data ?? [];
 }
 

@@ -213,16 +213,17 @@ export function EmployeeProvider({ children }) {
         status: "pending",
       }, { headers: getCrmHeaders() });
 
-      const saved = unwrapApiData(res) || res.data || res;
-      if (saved?.id) {
+      const saved = unwrapApiData(res) || res?.data || res;
+      const savedId = saved?.id ?? saved?.taskId;
+      if (savedId) {
         setTasksState((prev) => ({
           ...prev,
           [date]: (prev[date] || []).map((t) => (
-            t.id === tempId ? { ...localTask, id: saved.id } : t
+            t.id === tempId ? { ...localTask, id: savedId } : t
           )),
         }));
         invalidateCache("/api/v1");
-        return { ...localTask, id: saved.id };
+        return { ...localTask, id: savedId };
       }
     } catch (err) {
       setTasksState((prev) => ({
@@ -230,7 +231,7 @@ export function EmployeeProvider({ children }) {
         [date]: (prev[date] || []).filter((t) => t.id !== tempId),
       }));
       toast.error(err.message || "Could not save task to server");
-      throw err;
+      return null;
     }
 
     return localTask;
