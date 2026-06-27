@@ -745,6 +745,18 @@ const LEADERBOARD_RANKS = [
     colors: ["#fb923c", "#ea580c"],
     textColor: "#c2410c",
   },
+  {
+    badge: "bg-rose-50 text-rose-600 border-rose-200",
+    medal: "text-rose-400 fill-rose-100",
+    colors: ["#fb7185", "#e11d48"],
+    textColor: "#be123c",
+  },
+  {
+    badge: "bg-violet-50 text-violet-600 border-violet-200",
+    medal: "text-violet-400 fill-violet-100",
+    colors: ["#a78bfa", "#7c3aed"],
+    textColor: "#6d28d9",
+  },
 ];
 
 // ─── Leader Board Tooltip Portal ─────────────────────────────────────────────
@@ -854,15 +866,15 @@ function buildLeaderboardFromEmployees(employees) {
         rev: emp.revenue ? `₹${emp.revenue}` : "₹0",
       };
     })
-    .sort((a, b) => b.conv - a.conv || b.leads - a.leads)
-    .slice(0, 3);
+    .sort((a, b) => b.conv - a.conv || b.leads - a.leads || a.name.localeCompare(b.name))
+    .slice(0, 5);
 }
 
 function LeaderBoard({ employees }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const cardRefs = useRef([]);
   const isMobile = useIsMobile(640);
-  const topPerformers = (Array.isArray(employees) ? employees : []).slice(0, 3);
+  const topPerformers = (Array.isArray(employees) ? employees : []).slice(0, 5);
 
   return (
     <div className={`${PANEL} p-3 sm:p-4 md:p-5 min-w-0`}>
@@ -875,7 +887,7 @@ function LeaderBoard({ employees }) {
           <p className="text-xs text-slate-400 mt-1">Add team members and assign leads to populate the leaderboard.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-3">
           {topPerformers.map((emp, i) => {
             const rank = LEADERBOARD_RANKS[i] || LEADERBOARD_RANKS[2];
             const convPct = getConvPct(emp);
@@ -2162,13 +2174,13 @@ export default function Dashboard() {
   const fd        = mergedFilter[filterKey];
 
   const leaderboardData = useMemo(() => {
-    const fromFilter = fd?.leaderboard;
-    if (fromFilter?.length) return fromFilter.slice(0, 3);
-    const fromMock = FILTER_DATA[filterKey]?.leaderboard;
-    if (fromMock?.length) return fromMock.slice(0, 3);
     const fromTeam = buildLeaderboardFromEmployees(teamEmployees);
     if (fromTeam.length) return fromTeam;
-    return FILTER_DATA.week.leaderboard.slice(0, 3);
+    const fromFilter = fd?.leaderboard;
+    if (fromFilter?.length) return fromFilter.slice(0, 5);
+    const fromMock = FILTER_DATA[filterKey]?.leaderboard;
+    if (fromMock?.length) return fromMock.slice(0, 5);
+    return FILTER_DATA.week.leaderboard.slice(0, 5);
   }, [fd?.leaderboard, filterKey, teamEmployees]);
 
   useEffect(() => {
