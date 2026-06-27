@@ -1,22 +1,35 @@
+/**
+ * Production entry for Hostinger (Phusion Passenger) and local preview.
+ *
+ * Hostinger / Passenger:
+ * - https://www.phusionpassenger.com/docs/advanced_guides/in_depth/node/reverse_port_binding.html
+ * - Must call exactly ONE listen(); on Passenger use app.listen("passenger").
+ * - Do NOT spawn srvx CLI here — it creates a second server and causes EADDRINUSE.
+ *
+ * TanStack Start (Vite build output):
+ * - https://tanstack.com/start/latest/docs/framework/react/guide/hosting
+ * - vite build -> dist/client (static) + dist/server/server.js (SSR fetch handler)
+ * - Serve static assets, forward other requests via srvx toNodeHandler(fetch).
+ *
+ * Hostinger deploy:
+ * - Build locally: npm run build && git add dist && git commit && git push
+ * - hPanel: Framework Express, Entry server.js, Output directory EMPTY, Build npm install
+ */
 import fs from "node:fs";
-import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { toNodeHandler } from "srvx/node";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isPassenger =
-  typeof globalThis.PhusionPassenger !== "undefined" ||
-  typeof PhusionPassenger !== "undefined" ||
-  Boolean(process.env.PASSENGER_APP_ENV) ||
-  Boolean(process.env.PASSENGER_BASE_URI);
+const passenger = globalThis.PhusionPassenger;
+const isPassenger = passenger !== undefined;
 const PORT = Number(process.env.PORT || 3000);
 const CLIENT_DIR = path.join(__dirname, "dist", "client");
 const SERVER_ENTRY = path.join(__dirname, "dist", "server", "server.js");
 
 if (isPassenger) {
-  PhusionPassenger.configure({ autoInstall: false });
+  passenger.configure({ autoInstall: false });
 }
 
 process.on("uncaughtException", (error) => {
@@ -31,9 +44,9 @@ process.on("unhandledRejection", (reason) => {
 console.error(
   "[frontend] booting",
   JSON.stringify({
-    port: PORT,
+    serverVersion: 3,
     passenger: isPassenger,
-    serverVersion: 2,
+    port: PORT,
     cwd: process.cwd(),
     node: process.version,
     clientExists: fs.existsSync(CLIENT_DIR),
@@ -43,7 +56,7 @@ console.error(
 
 if (!fs.existsSync(SERVER_ENTRY)) {
   console.error(
-    "[frontend] FATAL: dist/server/server.js missing. Redeploy after `npm run build` or pull latest main (dist is committed).",
+    "[frontend] FATAL: dist/server/server.js missing. Run `npm run build` locally, commit dist/, push, redeploy.",
   );
   process.exit(1);
 }
@@ -53,6 +66,15 @@ const fetchHandler = serverEntry.default?.fetch ?? serverEntry.default;
 const nodeHandler = toNodeHandler(fetchHandler);
 
 const app = express();
+
+app.get("/health", (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: "ts-publications-crm-frontend",
+    passenger: isPassenger,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.use(
   express.static(CLIENT_DIR, {
@@ -64,13 +86,6 @@ app.use(
 
 app.use((req, res) => nodeHandler(req, res));
 
-const server = http.createServer(app);
-
-server.on("error", (error) => {
-  console.error("[frontend] listen error:", error.code || error.message, error);
-  process.exit(1);
-});
-
 function onListening() {
   console.error(
     "[frontend] listening",
@@ -81,9 +96,9 @@ function onListening() {
 console.error("[frontend] calling listen...");
 
 if (isPassenger) {
-  server.listen("passenger", onListening);
+  app.listen("passenger", onListening);
 } else {
-  server.listen(PORT, "0.0.0.0", onListening);
+  app.listen(PORT, "0.0.0.0", onListening);
 }
 
 export default app;
