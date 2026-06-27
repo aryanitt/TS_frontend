@@ -1,13 +1,19 @@
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import express from "express";
+import { toNodeHandler } from "srvx/node";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.PORT || "3000";
+const isPassenger = typeof PhusionPassenger !== "undefined";
+const PORT = Number(process.env.PORT || 3000);
 const CLIENT_DIR = path.join(__dirname, "dist", "client");
 const SERVER_ENTRY = path.join(__dirname, "dist", "server", "server.js");
-const SRVX_BIN = path.join(__dirname, "node_modules", "srvx", "bin", "srvx.mjs");
+
+if (isPassenger) {
+  PhusionPassenger.configure({ autoInstall: false });
+}
 
 process.on("uncaughtException", (error) => {
   console.error("[frontend] uncaughtException:", error);
@@ -16,19 +22,19 @@ process.on("uncaughtException", (error) => {
 
 process.on("unhandledRejection", (reason) => {
   console.error("[frontend] unhandledRejection:", reason);
-  process.exit(1);
 });
 
-const bootInfo = {
-  port: PORT,
-  cwd: process.cwd(),
-  node: process.version,
-  clientExists: fs.existsSync(CLIENT_DIR),
-  serverExists: fs.existsSync(SERVER_ENTRY),
-  srvxExists: fs.existsSync(SRVX_BIN),
-};
-
-console.error("[frontend] booting", JSON.stringify(bootInfo));
+console.error(
+  "[frontend] booting",
+  JSON.stringify({
+    port: PORT,
+    passenger: isPassenger,
+    cwd: process.cwd(),
+    node: process.version,
+    clientExists: fs.existsSync(CLIENT_DIR),
+    serverExists: fs.existsSync(SERVER_ENTRY),
+  }),
+);
 
 if (!fs.existsSync(SERVER_ENTRY)) {
   console.error(
@@ -37,34 +43,42 @@ if (!fs.existsSync(SERVER_ENTRY)) {
   process.exit(1);
 }
 
-if (!fs.existsSync(SRVX_BIN)) {
-  console.error("[frontend] FATAL: srvx not installed — run `npm install`.");
+const serverEntry = await import("./dist/server/server.js");
+const fetchHandler = serverEntry.default?.fetch ?? serverEntry.default;
+const nodeHandler = toNodeHandler(fetchHandler);
+
+const app = express();
+
+app.use(
+  express.static(CLIENT_DIR, {
+    index: false,
+    maxAge: "1y",
+    immutable: true,
+  }),
+);
+
+app.use((req, res) => nodeHandler(req, res));
+
+const server = http.createServer(app);
+
+server.on("error", (error) => {
+  console.error("[frontend] listen error:", error.code || error.message, error);
   process.exit(1);
+});
+
+function onListening() {
+  console.error(
+    "[frontend] listening",
+    isPassenger ? "on Passenger" : `on 0.0.0.0:${PORT}`,
+  );
 }
 
-const args = [
-  SRVX_BIN,
-  "serve",
-  "--prod",
-  `--port=${PORT}`,
-  "--static",
-  CLIENT_DIR,
-  "--entry",
-  SERVER_ENTRY,
-];
+console.error("[frontend] calling listen...");
 
-const child = spawn(process.execPath, args, {
-  cwd: __dirname,
-  env: process.env,
-  stdio: "inherit",
-});
+if (isPassenger) {
+  server.listen("passenger", onListening);
+} else {
+  server.listen(PORT, "0.0.0.0", onListening);
+}
 
-child.on("error", (error) => {
-  console.error("[frontend] failed to start srvx:", error);
-  process.exit(1);
-});
-
-child.on("exit", (code, signal) => {
-  console.error("[frontend] srvx exited", JSON.stringify({ code, signal }));
-  process.exit(code ?? 1);
-});
+export default app;
