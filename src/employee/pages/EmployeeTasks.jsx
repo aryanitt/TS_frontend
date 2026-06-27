@@ -7,7 +7,7 @@ import {
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge, Drawer } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
-import { EMP_SOP_CHECKLIST, EMP_APP_TODAY, EMP_TEAM, isTaskAssignedToEmployee, formatTaskDeadlineTime, findEmpTeamMember } from "../../data/employeeMock.js";
+import { EMP_SOP_CHECKLIST, getEmpAppToday, EMP_TEAM, isTaskAssignedToEmployee, formatTaskDeadlineTime, findEmpTeamMember } from "../../data/employeeMock.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
   EmpEmptyState, BtnPrimary, BtnSecondary, AvatarCircle,
@@ -232,10 +232,10 @@ function AddTaskDrawer({ open, newTask, setNewTask, dateFilter, setDateFilter, o
 }
 
 export default function EmployeeTasks() {
-  const { tasks, setTasks, syncTaskWithFollowUp, employee } = useEmployee();
+  const { tasks, setTasks, createTask, updateTaskStatus, removeTask, syncTaskWithFollowUp, employee } = useEmployee();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState("upcoming");
-  const [dateFilter, setDateFilter] = useState(EMP_APP_TODAY);
+  const [dateFilter, setDateFilter] = useState(getEmpAppToday());
   const [search, setSearch] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(searchParams.get("action") === "add");
   const [newTask, setNewTask] = useState({
@@ -258,7 +258,7 @@ export default function EmployeeTasks() {
     toast.success("Checklist updated");
   };
 
-  const today = new Date(`${EMP_APP_TODAY}T00:00:00`);
+  const today = new Date(`${getEmpAppToday()}T00:00:00`);
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setDrawerOpen(true);
@@ -274,7 +274,7 @@ export default function EmployeeTasks() {
 
   const stats = useMemo(() => {
     const pending = allTasks.filter((t) => !t.done).length;
-    const doneToday = allTasks.filter((t) => t.done && t.date === EMP_APP_TODAY).length;
+    const doneToday = allTasks.filter((t) => t.done && t.date === getEmpAppToday()).length;
     const highPriority = allTasks.filter((t) => !t.done && t.priority === "high").length;
     const upcomingDays = new Set(allTasks.filter((t) => !t.done && new Date(`${t.date}T00:00:00`) >= today).map((t) => t.date)).size;
     return { pending, doneToday, highPriority, upcomingDays };
@@ -314,22 +314,19 @@ export default function EmployeeTasks() {
     }
   };
 
-  const toggleTask = (date, id) => {
+  const toggleTask = async (date, id) => {
     const task = tasks[date]?.find((t) => t.id === id);
     const nextDone = !task?.done;
     if (task?.followUpId) {
       syncTaskWithFollowUp(date, id, nextDone);
     } else {
-      setTasks((prev) => ({
-        ...prev,
-        [date]: (prev[date] || []).map((t) => (t.id === id ? { ...t, done: nextDone } : t)),
-      }));
+      await updateTaskStatus(date, id, nextDone);
     }
     toast.success("Task updated");
   };
 
-  const deleteTask = (date, id) => {
-    setTasks((prev) => ({ ...prev, [date]: (prev[date] || []).filter((t) => t.id !== id) }));
+  const deleteTask = async (date, id) => {
+    await removeTask(date, id);
     toast.success("Task removed");
   };
 
@@ -340,7 +337,7 @@ export default function EmployeeTasks() {
     deadline: "17:00",
   });
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!newTask.name.trim()) {
       toast.error("Enter a task name");
       return;
@@ -351,27 +348,30 @@ export default function EmployeeTasks() {
     }
     const member = findEmpTeamMember(newTask.assignee) || findEmpTeamMember(employee.name);
     const assigneeName = member?.name || employee.name;
-    setTasks((prev) => ({
-      ...prev,
-      [dateFilter]: [...(prev[dateFilter] || []), {
-        id: Date.now(),
-        name: newTask.name.trim(),
-        done: false,
-        priority: newTask.priority,
-        assignee: assigneeName,
-        assigneeAv: member?.av || employee.initials,
-        assigneeColor: member?.color || employee.avatarColor,
-        deadline: newTask.deadline,
-        createdBy: employee.name,
-      }],
-    }));
-    closeDrawer();
-    setNewTask(resetNewTask());
-    toast.success(
-      assigneeName === employee.name
-        ? "Task added to your list"
-        : `Task assigned to ${assigneeName}`,
-    );
+    try {
+      await createTask({
+        date: dateFilter,
+        task: {
+          name: newTask.name.trim(),
+          done: false,
+          priority: newTask.priority,
+          assignee: assigneeName,
+          assigneeAv: member?.av || employee.initials,
+          assigneeColor: member?.color || employee.avatarColor,
+          deadline: newTask.deadline,
+          createdBy: employee.name,
+        },
+      });
+      closeDrawer();
+      setNewTask(resetNewTask());
+      toast.success(
+        assigneeName === employee.name
+          ? "Task added to your list"
+          : `Task assigned to ${assigneeName}`,
+      );
+    } catch {
+      // createTask already toasts on failure
+    }
   };
 
   return (

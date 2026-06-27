@@ -484,7 +484,60 @@ export const LEAD_STATUS_CLASS = {
   hot: "b-hot", warm: "b-warm", cold: "b-cold", converted: "b-conv", notpick: "b-np", ni: "b-ni",
 };
 
-export const EMP_APP_TODAY = "2026-04-30";
+export function getEmpAppToday() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export const EMP_APP_TODAY = getEmpAppToday();
+
+export function priorityToApi(priority) {
+  const map = { high: "high", med: "medium", low: "low" };
+  return map[priority] || "medium";
+}
+
+export function priorityFromApi(priority) {
+  const v = String(priority || "").toLowerCase();
+  if (v.includes("high")) return "high";
+  if (v.includes("low")) return "low";
+  return "med";
+}
+
+export function tasksMapFromApi(apiTasks, employee) {
+  const map = {};
+  if (!Array.isArray(apiTasks)) return map;
+
+  for (const t of apiTasks) {
+    const due = t.dueAt ? new Date(t.dueAt) : new Date();
+    const date = Number.isNaN(due.getTime())
+      ? getEmpAppToday()
+      : due.toISOString().slice(0, 10);
+    const deadline = t.dueAt && !Number.isNaN(due.getTime())
+      ? `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`
+      : "17:00";
+
+    const item = {
+      id: t.id,
+      name: t.title || t.name || "Task",
+      done: t.status === "done" || t.status === "completed",
+      priority: priorityFromApi(t.priority),
+      assignee: employee?.name || "",
+      assigneeAv: employee?.initials || "?",
+      assigneeColor: employee?.avatarColor || "#64748b",
+      deadline,
+      source: t.followUpId ? "followup" : undefined,
+      followUpId: t.followUpId,
+    };
+
+    if (!map[date]) map[date] = [];
+    map[date].push(item);
+  }
+
+  return map;
+}
 
 export function getFollowUpUrgency(dateStr) {
   const d = new Date(`${dateStr}T00:00:00`);
@@ -550,9 +603,9 @@ export function findEmpTeamMember(name) {
   );
 }
 
-export function normalizeTasksMap(value) {
+export function normalizeTasksMap(value, { useMockFallback = true } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return createInitialTasks();
+    return useMockFallback ? createInitialTasks() : {};
   }
 
   const normalized = {};
@@ -562,7 +615,8 @@ export function normalizeTasksMap(value) {
     }
   });
 
-  return Object.keys(normalized).length ? normalized : createInitialTasks();
+  if (Object.keys(normalized).length) return normalized;
+  return useMockFallback ? createInitialTasks() : {};
 }
 
 export function createInitialTasks() {

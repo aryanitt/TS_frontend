@@ -4,6 +4,8 @@ import {
   CURRENT_EMPLOYEE,
   createInitialTasks,
   normalizeTasksMap,
+  tasksMapFromApi,
+  priorityToApi,
   EMP_LEADS,
   EMP_FOLLOWUPS,
   empLeadFromDrawerPayload,
@@ -65,7 +67,7 @@ export function EmployeeProvider({ children }) {
     }
   }, [employee.id]);
 
-  const [tasks, setTasksState] = useState(() => createInitialTasks());
+  const [tasks, setTasksState] = useState({});
   const [followUps, setFollowUpsState] = useState(() =>
     EMP_FOLLOWUPS.map((f) => ({ ...f, done: false })),
   );
@@ -73,7 +75,7 @@ export function EmployeeProvider({ children }) {
   const [activities, setActivities] = useState(EMP_LEAD_CALL_ACTIVITY);
   const [sops, setSopsState] = useState(ALL_EMP_SOPS);
 
-  const loadEmployeeWorkspace = useCallback(async (empId) => {
+  const loadEmployeeWorkspace = useCallback(async (empId, empProfile = employee) => {
     try {
       const res = await apiGet(`/api/v1/employee/${empId}/dashboard`, {
         headers: getCrmHeaders(),
@@ -81,7 +83,9 @@ export function EmployeeProvider({ children }) {
         cacheTtl: 0,
       });
       const data = unwrapApiData(res) || res.data || res;
-      if (data.tasks?.length) setTasksState(normalizeTasksMap(data.tasks));
+      if (Array.isArray(data.tasks)) {
+        setTasksState(tasksMapFromApi(data.tasks, empProfile));
+      }
       if (data.followups?.length) {
         setFollowUpsState(data.followups.map((f) => ({ ...f, done: f.status === "completed" })));
       }
@@ -90,7 +94,7 @@ export function EmployeeProvider({ children }) {
     } catch {
       return false;
     }
-  }, []);
+  }, [employee]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +114,7 @@ export function EmployeeProvider({ children }) {
           setEmployee(mapped);
           storeEmployee(mapped);
           const ok = await refreshLeads(mapped.id);
-          await loadEmployeeWorkspace(mapped.id);
+          await loadEmployeeWorkspace(mapped.id, mapped);
           try {
             const sopRes = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
             if (sopRes.success && sopRes.sops?.length) {
@@ -135,6 +139,7 @@ export function EmployeeProvider({ children }) {
       if (!cancelled) {
         setUsingApi(false);
         setLeads(EMP_LEADS);
+        setTasksState(createInitialTasks());
         setLoading(false);
       }
     }
@@ -143,14 +148,129 @@ export function EmployeeProvider({ children }) {
     return () => { cancelled = true; };
   }, [refreshLeads, loadEmployeeWorkspace]);
 
+  const refreshTasks = useCallback(async (empId = employee.id) => {
+    try {
+      const res = await apiGet(`/api/v1/employee/${empId}/tasks`, {
+        headers: getCrmHeaders(),
+        skipCache: true,
+        cacheTtl: 0,
+      });
+      const items = unwrapApiData(res);
+      setTasksState(tasksMapFromApi(items, employee));
+      return true;
+    } catch {
+      return false;
+    }
+  }, [employee]);
+
+  const resolveAssigneeId = useCallback(async (assigneeName) => {
+    const name = String(assigneeName || "").trim();
+    const self = employee?.name || "";
+    if (!name || !self || name === self || name.split(" ")[0] === self.split(" ")[0]) {
+      return employee.id;
+    }
+    try {
+      const res = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
+      const match = res.employees?.find(
+        (e) => e.name === name || e.name?.split(" ")[0] === name.split(" ")[0],
+      );
+      if (match?.id) return match.id;
+    } catch {
+      // fall through
+    }
+    return employee.id;
+  }, [employee]);
+
+  const createTask = useCallback(async ({ date, task }) => {
+    const tempId = Date.now();
+    const localTask = { ...task, id: tempId };
+
+    setTasksState((prev) => ({
+      ...prev,
+      [date]: [...(prev[date] || []), localTask],
+    }));
+
+    if (!usingApi) return localTask;
+
+    try {
+      const assigneeId = await resolveAssigneeId(task.assignee);
+      const res = await apiPost("/api/v1/employee/tasks", {
+        assigneeId,
+        title: task.name,
+        priority: priorityToApi(task.priority),
+        dueAt: `${date}T${task.deadline || "17:00"}:00`,
+        status: "pending",
+      }, { headers: getCrmHeaders() });
+
+      const saved = unwrapApiData(res) || res.data || res;
+      if (saved?.id) {
+        setTasksState((prev) => ({
+          ...prev,
+          [date]: (prev[date] || []).map((t) => (
+            t.id === tempId ? { ...localTask, id: saved.id } : t
+          )),
+        }));
+        invalidateCache("/api/v1");
+        return { ...localTask, id: saved.id };
+      }
+    } catch (err) {
+      setTasksState((prev) => ({
+        ...prev,
+        [date]: (prev[date] || []).filter((t) => t.id !== tempId),
+      }));
+      toast.error(err.message || "Could not save task to server");
+      throw err;
+    }
+
+    return localTask;
+  }, [employee, resolveAssigneeId, usingApi]);
+
+  const updateTaskStatus = useCallback(async (date, taskId, done) => {
+    setTasksState((prev) => ({
+      ...prev,
+      [date]: (prev[date] || []).map((t) => (t.id === taskId ? { ...t, done } : t)),
+    }));
+
+    if (!usingApi || !taskId) return;
+
+    try {
+      await apiPatch(`/api/v1/employee/tasks/${taskId}`, {
+        status: done ? "done" : "pending",
+        completedAt: done ? new Date().toISOString() : null,
+      }, { headers: getCrmHeaders() });
+      invalidateCache("/api/v1");
+    } catch (err) {
+      toast.error(err.message || "Could not update task");
+      await refreshTasks();
+    }
+  }, [refreshTasks, usingApi]);
+
+  const removeTask = useCallback(async (date, taskId) => {
+    const previous = tasks;
+    setTasksState((prev) => ({
+      ...prev,
+      [date]: (prev[date] || []).filter((t) => t.id !== taskId),
+    }));
+
+    if (!usingApi || !taskId) return;
+
+    try {
+      await apiPatch(`/api/v1/employee/tasks/${taskId}`, {
+        status: "cancelled",
+      }, { headers: getCrmHeaders() });
+      invalidateCache("/api/v1");
+    } catch (err) {
+      setTasksState(previous);
+      toast.error(err.message || "Could not delete task");
+    }
+  }, [tasks, usingApi]);
+
   const setTasks = useCallback((updater) => {
     setTasksState((prev) => {
-      const next = normalizeTasksMap(
-        typeof updater === "function" ? updater(prev) : updater,
-      );
-      return next;
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      return normalizeTasksMap(next, { useMockFallback: !usingApi });
     });
-  }, []);
+  }, [usingApi]);
 
   const setFollowUps = useCallback((updater) => {
     setFollowUpsState((prev) => {
@@ -359,6 +479,10 @@ export function EmployeeProvider({ children }) {
     employee,
     tasks,
     setTasks,
+    createTask,
+    updateTaskStatus,
+    removeTask,
+    refreshTasks,
     followUps,
     setFollowUps,
     scheduleFollowUp,
@@ -380,7 +504,8 @@ export function EmployeeProvider({ children }) {
     setSops,
     loading,
   }), [
-    employee, tasks, setTasks, followUps, setFollowUps, scheduleFollowUp, completeFollowUp,
+    employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
+    followUps, setFollowUps, scheduleFollowUp, completeFollowUp,
     syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, refreshLeads,
     usingApi, calls, addCallRecord, activities, addActivityRecord, sops, setSops, loading,
   ]);
