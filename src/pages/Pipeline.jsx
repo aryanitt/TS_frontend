@@ -35,42 +35,64 @@ function MetricTile({ label, value, sub, icon: Icon, iconBg, iconColor }) {
   );
 }
 
-function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd }) {
+function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd, onDragInteraction }) {
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
   const suppressClickRef = useRef(false);
+  const pointerStartRef = useRef(null);
+
+  const tryOpen = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    onOpen?.();
+  };
 
   return (
     <div
       draggable
       onDragStart={(e) => {
-        suppressClickRef.current = false;
+        suppressClickRef.current = true;
+        onDragInteraction?.();
         e.dataTransfer.setData("text/lead-id", lead.id);
         e.dataTransfer.effectAllowed = "move";
         onDragStart?.();
       }}
-      onDrag={() => {
-        suppressClickRef.current = true;
-      }}
       onDragEnd={() => {
+        suppressClickRef.current = true;
+        onDragInteraction?.();
         onDragEnd?.();
       }}
-      className={`rounded-xl border border-rose-100 bg-white transition group ${
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        pointerStartRef.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={(e) => {
+        if (e.button !== 0 || !pointerStartRef.current) return;
+        const start = pointerStartRef.current;
+        pointerStartRef.current = null;
+        const moved =
+          Math.abs(e.clientX - start.x) > 6 ||
+          Math.abs(e.clientY - start.y) > 6;
+        if (moved || suppressClickRef.current) {
+          suppressClickRef.current = false;
+          return;
+        }
+        tryOpen();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          tryOpen();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      className={`rounded-xl border border-rose-100 bg-white transition group cursor-grab active:cursor-grabbing select-none ${
         isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"
       }`}
     >
-      <button
-        type="button"
-        onClick={(e) => {
-          if (suppressClickRef.current) {
-            suppressClickRef.current = false;
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-          }
-          onOpen?.();
-        }}
-        className="w-full text-left p-3"
-      >
+      <div className="w-full text-left p-3 pointer-events-none">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
             <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{lead.name}</p>
@@ -82,7 +104,7 @@ function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd }) {
           <span className="text-xs font-black text-rose-700 tabular-nums">{formatPipelineValue(lead.value)}</span>
           <span className="text-[9px] font-medium text-slate-400">{timeAgoShort(lead.updatedAt)}</span>
         </div>
-      </button>
+      </div>
     </div>
   );
 }
@@ -98,6 +120,19 @@ export default function Pipeline() {
   const [dragLeadId, setDragLeadId] = useState(null);
   const [dropStageId, setDropStageId] = useState(null);
   const columnRefs = useRef({});
+  const blockDetailOpenRef = useRef(false);
+
+  const markDragInteraction = () => {
+    blockDetailOpenRef.current = true;
+    window.setTimeout(() => {
+      blockDetailOpenRef.current = false;
+    }, 350);
+  };
+
+  const openLeadDetail = (lead) => {
+    if (blockDetailOpenRef.current) return;
+    setSelectedLead(lead);
+  };
 
   useEffect(() => {
     if (new URLSearchParams(location.search).get("action") === "addLead") {
@@ -160,9 +195,13 @@ export default function Pipeline() {
     columnRefs.current[stageId]?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
   };
 
-  const handleUpdateLead = (updated) => {
+  const applyLeadUpdate = (updated) => {
     setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-    setSelectedLead(updated);
+    setSelectedLead((current) => (current?.id === updated.id ? updated : current));
+  };
+
+  const handleUpdateLead = (updated) => {
+    applyLeadUpdate(updated);
   };
 
   const moveLeadToStage = (leadId, stageId, { scroll = true } = {}) => {
@@ -178,7 +217,7 @@ export default function Pipeline() {
       `Moved to ${target.label}`,
       stageId === "closed_won" ? "won" : "note",
     );
-    handleUpdateLead(updated);
+    applyLeadUpdate(updated);
     const dbId = lead._dbId || leadId;
     if (dbId && String(dbId).match(/^\d+$/)) {
       apiPatch(`/api/dashboard/pipeline/leads/${dbId}`, { stage: stageId })
@@ -288,6 +327,7 @@ export default function Pipeline() {
                       e.preventDefault();
                       setDropStageId(null);
                       setDragLeadId(null);
+                      markDragInteraction();
                       const id = e.dataTransfer.getData("text/lead-id");
                       if (id) moveLeadToStage(id, stage.id);
                     }}
@@ -307,7 +347,8 @@ export default function Pipeline() {
                           key={lead.id}
                           lead={lead}
                           isDragging={dragLeadId === lead.id}
-                          onOpen={() => setSelectedLead(lead)}
+                          onOpen={() => openLeadDetail(lead)}
+                          onDragInteraction={markDragInteraction}
                           onDragStart={() => setDragLeadId(lead.id)}
                           onDragEnd={() => setDragLeadId(null)}
                         />
