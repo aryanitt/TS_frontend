@@ -7,6 +7,8 @@ const CACHE_PREFIX = "crm_cache:";
 const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
 const memoryCache = new Map();
 const inflightGets = new Map();
+let lastFetchAt = 0;
+const MIN_FETCH_GAP_MS = 120;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -105,6 +107,10 @@ async function performFetch(url, options = {}) {
     if (existing) return existing;
   }
 
+  const gap = lastFetchAt + MIN_FETCH_GAP_MS - Date.now();
+  if (gap > 0) await sleep(gap);
+  lastFetchAt = Date.now();
+
   const request = fetch(url, {
     ...options,
     headers: {
@@ -129,19 +135,6 @@ async function performFetch(url, options = {}) {
 function storeGetCache(key, data, ttl) {
   memoryCache.set(key, { data, expires: Date.now() + ttl });
   writeSession(key, data, ttl);
-}
-
-async function revalidateInBackground(url, options, key, ttl) {
-  try {
-    const response = await performFetch(url, options);
-    if (!response.ok) return;
-    const text = await response.text();
-    if (!text.trim()) return;
-    const data = JSON.parse(text);
-    storeGetCache(key, data, ttl);
-  } catch {
-    // silent background refresh
-  }
 }
 
 function formatApiError(data, fallback) {
@@ -194,7 +187,7 @@ export async function apiJson(path, options = {}) {
     cacheTtl = DEFAULT_GET_TTL,
     skipCache = false,
     method = "GET",
-    _retry429 = false,
+    _retry429 = 0,
     ...fetchOptions
   } = options;
 
@@ -206,13 +199,11 @@ export async function apiJson(path, options = {}) {
   if (isGet && !skipCache && cacheTtl > 0) {
     const mem = memoryCache.get(key);
     if (mem && Date.now() < mem.expires) {
-      revalidateInBackground(url, { ...fetchOptions, method: httpMethod }, key, cacheTtl);
       return mem.data;
     }
     const stored = readSession(key);
     if (stored != null) {
       storeGetCache(key, stored, cacheTtl);
-      revalidateInBackground(url, { ...fetchOptions, method: httpMethod }, key, cacheTtl);
       return stored;
     }
   }
@@ -242,13 +233,13 @@ export async function apiJson(path, options = {}) {
 
   if (!parsed) {
     const preview = text.slice(0, 80);
-    if (response.status === 429 && !_retry429) {
-      await sleep(1500);
+    if (response.status === 429 && _retry429 < 3) {
+      await sleep(1000 * (2 ** _retry429));
       return apiJson(path, {
         cacheTtl,
         skipCache,
         method,
-        _retry429: true,
+        _retry429: _retry429 + 1,
         ...fetchOptions,
       });
     }
@@ -258,13 +249,13 @@ export async function apiJson(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (response.status === 429 && !_retry429) {
-      await sleep(1500);
+    if (response.status === 429 && _retry429 < 3) {
+      await sleep(1000 * (2 ** _retry429));
       return apiJson(path, {
         cacheTtl,
         skipCache,
         method,
-        _retry429: true,
+        _retry429: _retry429 + 1,
         ...fetchOptions,
       });
     }

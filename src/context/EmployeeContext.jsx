@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   CURRENT_EMPLOYEE,
@@ -41,6 +41,8 @@ import {
 
 const EmployeeContext = createContext(null);
 
+const EMPLOYEE_CACHE_TTL = 60_000;
+const EMPLOYEE_LIST_CACHE_TTL = 5 * 60 * 1000;
 const AVATAR_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b"];
 
 function initialsFromName(name) {
@@ -80,8 +82,7 @@ export function EmployeeProvider({ children }) {
     try {
       const res = await apiGet(`/api/v1/employee/${empId}/leads`, {
         headers: getCrmHeaders(),
-        skipCache: true,
-        cacheTtl: 0,
+        cacheTtl: EMPLOYEE_CACHE_TTL,
       });
       const items = unwrapApiData(res);
       setLeads(items.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)));
@@ -103,11 +104,11 @@ export function EmployeeProvider({ children }) {
   const [sops, setSopsState] = useState(() => ALL_EMP_SOPS.map(normalizeCallSop));
   const [teamEmployees, setTeamEmployees] = useState([]);
 
-  const loadEmployeeWorkspace = useCallback(async (empId, empProfile = employee) => {
+  const loadEmployeeWorkspace = useCallback(async (empId, empProfile) => {
     try {
       const res = await apiGet(`/api/v1/employee/${empId}/dashboard`, {
         headers: getCrmHeaders(),
-        cacheTtl: 30_000,
+        cacheTtl: EMPLOYEE_CACHE_TTL,
       });
       const data = unwrapApiData(res) || res.data || res;
       if (Array.isArray(data.tasks)) {
@@ -119,8 +120,8 @@ export function EmployeeProvider({ children }) {
       if (workspaceLeads.length) {
         setLeads(workspaceLeads);
       }
+      const leadSource = workspaceLeads;
       if (Array.isArray(data.followups)) {
-        const leadSource = workspaceLeads.length ? workspaceLeads : leads;
         setFollowUpsState(
           data.followups.map((f) => followUpFromApi(f, leadSource)),
         );
@@ -129,7 +130,7 @@ export function EmployeeProvider({ children }) {
         setCalls(data.calls.map((c) => callFromApi(c, workspaceLeads)));
       }
       if (Array.isArray(data.meetings)) {
-        const split = partitionMeetings(data.meetings, workspaceLeads.length ? workspaceLeads : leads);
+        const split = partitionMeetings(data.meetings, workspaceLeads);
         setMeetingsUpcoming(split.upcoming);
         setMeetingsHistory(split.history);
       }
@@ -138,9 +139,14 @@ export function EmployeeProvider({ children }) {
     } catch {
       return false;
     }
-  }, [employee, leads]);
+  }, []);
+
+  const didBootstrap = useRef(false);
 
   useEffect(() => {
+    if (didBootstrap.current) return;
+    didBootstrap.current = true;
+
     let cancelled = false;
 
     async function bootstrap() {
@@ -148,8 +154,7 @@ export function EmployeeProvider({ children }) {
       try {
         const empRes = await apiGet("/api/v1/employees", {
           headers: getCrmHeaders(),
-          skipCache: true,
-          cacheTtl: 0,
+          cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
         });
         const employees = unwrapApiData(empRes);
         const matched = employees.find((e) => e.name === CURRENT_EMPLOYEE.name) || employees[0];
@@ -166,7 +171,7 @@ export function EmployeeProvider({ children }) {
             /* workspace partial load is ok */
           }
           try {
-            const sopRes = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
+            const sopRes = await apiGet("/api/sop/all", { cacheTtl: EMPLOYEE_LIST_CACHE_TTL });
             if (sopRes.success && sopRes.sops?.length) {
               setSopsState(mergeApiSopsWithLocal(sopRes.sops));
             }
@@ -205,14 +210,13 @@ export function EmployeeProvider({ children }) {
 
     bootstrap();
     return () => { cancelled = true; };
-  }, [loadEmployeeWorkspace]);
+  }, []);
 
   const refreshTasks = useCallback(async (empId = employee.id) => {
     try {
       const res = await apiGet(`/api/v1/employee/${empId}/tasks`, {
         headers: getCrmHeaders(),
-        skipCache: true,
-        cacheTtl: 0,
+        cacheTtl: EMPLOYEE_CACHE_TTL,
       });
       const items = unwrapApiData(res);
       setTasksState(tasksMapFromApi(items, employee));
@@ -225,17 +229,23 @@ export function EmployeeProvider({ children }) {
   const resolveApiEmployeeId = useCallback(async (preferredId, preferredName) => {
     if (!isMockEmployeeId(preferredId)) return preferredId;
 
+    const name = String(preferredName || employee?.name || "").trim();
+    if (teamEmployees.length) {
+      const cached = teamEmployees.find((e) => e.name === name)
+        || teamEmployees.find((e) => e.name === CURRENT_EMPLOYEE.name)
+        || teamEmployees[0];
+      if (cached?.id) return cached.id;
+    }
+
     const res = await apiGet("/api/v1/employees", {
       headers: getCrmHeaders(),
-      skipCache: true,
-      cacheTtl: 0,
+      cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
     });
     const employees = unwrapApiData(res);
     if (!Array.isArray(employees) || !employees.length) {
       throw new Error("No employees in database — add team members first");
     }
 
-    const name = String(preferredName || employee?.name || "").trim();
     const matched = employees.find((e) => e.name === name)
       || employees.find((e) => e.name === CURRENT_EMPLOYEE.name)
       || employees[0];
@@ -246,9 +256,10 @@ export function EmployeeProvider({ children }) {
     const mapped = { ...employee, ...mapApiEmployee(matched) };
     setEmployee(mapped);
     storeEmployee(mapped);
+    setTeamEmployees(employees.map((e) => mapApiEmployee(e)));
     setUsingApi(true);
     return matched.id;
-  }, [employee]);
+  }, [employee, teamEmployees]);
 
   const refreshFollowUps = useCallback(async (empId = employee.id, leadList = leads) => {
     try {
@@ -258,7 +269,7 @@ export function EmployeeProvider({ children }) {
       }
       const res = await apiGet(`/api/v1/employee/${resolvedId}/followups`, {
         headers: getCrmHeaders(),
-        cacheTtl: 30_000,
+        cacheTtl: EMPLOYEE_CACHE_TTL,
       });
       const items = unwrapApiData(res);
       if (!Array.isArray(items)) return false;
@@ -733,7 +744,7 @@ export function EmployeeProvider({ children }) {
       }
       const res = await apiGet(`/api/v1/employee/${resolvedId}/meetings`, {
         headers: getCrmHeaders(),
-        cacheTtl: 30_000,
+        cacheTtl: EMPLOYEE_CACHE_TTL,
       });
       const items = unwrapApiData(res);
       const split = partitionMeetings(items, leadList);
