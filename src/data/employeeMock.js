@@ -286,9 +286,17 @@ const MEETING_PLATFORM_LABELS = {
 
 export function meetingToApiPayload(form, employeeId) {
   const platformLabel = MEETING_PLATFORM_LABELS[form.platform] || form.platform || "Google Meet";
+  const leadId = Number(form.leadId);
+  const empId = Number(employeeId);
+  if (!Number.isFinite(leadId) || leadId <= 0) {
+    throw new Error("Select a valid lead before booking a meeting");
+  }
+  if (!Number.isFinite(empId) || empId <= 0) {
+    throw new Error("Employee session invalid — refresh the page and try again");
+  }
   const payload = {
-    leadId: Number(form.leadId),
-    employeeId: Number(employeeId),
+    leadId,
+    employeeId: empId,
     title: form.title.trim(),
     scheduledAt: `${form.date}T${form.time || "09:00"}:00`,
     location: platformLabel,

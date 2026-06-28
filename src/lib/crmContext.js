@@ -21,8 +21,8 @@ export function storeEmployee(employee) {
   }
 }
 
-export function getCrmHeaders(role = "employee") {
-  const emp = getStoredEmployee();
+export function getCrmHeaders(role = "employee", employeeOverride = null) {
+  const emp = employeeOverride || getStoredEmployee();
   if (role === "admin") {
     return {
       "x-tenant-id": "default",

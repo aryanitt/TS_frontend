@@ -832,7 +832,8 @@ export function EmployeeProvider({ children }) {
     try {
       const employeeId = await resolveApiEmployeeId(employee.id, employee.name);
       const payload = meetingToApiPayload({ ...form, meetLink }, employeeId);
-      const res = await apiPost("/api/v1/employee/meetings", payload, { headers: getCrmHeaders() });
+      const headers = getCrmHeaders("employee", { ...employee, id: employeeId });
+      const res = await apiPost("/api/v1/employee/meetings", payload, { headers });
       const saved = unwrapApiData(res) || res?.data || res;
       const savedId = saved?.id ?? saved?._id;
       if (!savedId) throw new Error("Meeting was not saved — server returned no id");

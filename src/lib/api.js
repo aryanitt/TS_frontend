@@ -142,16 +142,31 @@ function formatApiError(data, fallback) {
 
 function parseApiResponseBody(text, contentType) {
   const trimmed = text.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return { parsed: false, data: null };
   const looksJson = contentType.includes("application/json")
     || trimmed.startsWith("{")
-    || trimmed.startsWith("[");
-  if (!looksJson) return null;
+    || trimmed.startsWith("[")
+    || trimmed === "null";
+  if (!looksJson) return { parsed: false, data: null };
   try {
-    return JSON.parse(trimmed);
+    return { parsed: true, data: JSON.parse(trimmed) };
   } catch {
-    return null;
+    return { parsed: false, data: null };
   }
+}
+
+function describeNonJsonResponse(status, contentType, preview) {
+  if (preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")) {
+    return "API request hit the frontend instead of the backend. Check VITE_API_URL.";
+  }
+  if (status === 429) return "Too many API requests — wait a moment and try again.";
+  if (status === 502 || status === 503 || status === 504) {
+    return "Backend API is temporarily unavailable. Try again in a few seconds.";
+  }
+  if (status === 204 || !preview.trim()) {
+    return `API returned ${status} with an empty response. Try again.`;
+  }
+  return `Expected JSON from API but got ${contentType || "unknown type"}`;
 }
 
 /**
@@ -205,15 +220,11 @@ export async function apiJson(path, options = {}) {
 
   const contentType = response.headers.get("content-type") || "";
   const text = await response.text();
-  const data = parseApiResponseBody(text, contentType);
+  const { parsed, data } = parseApiResponseBody(text, contentType);
 
-  if (data == null) {
+  if (!parsed) {
     const preview = text.slice(0, 80);
-    const err = new Error(
-      preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")
-        ? "API request hit the frontend instead of the backend. Check VITE_API_URL."
-        : `Expected JSON from API but got ${contentType || "unknown type"}`,
-    );
+    const err = new Error(describeNonJsonResponse(response.status, contentType, preview));
     err.status = response.status;
     throw err;
   }
