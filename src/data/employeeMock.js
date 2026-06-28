@@ -610,6 +610,13 @@ export function priorityFromApi(priority) {
   return "med";
 }
 
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export function tasksMapFromApi(apiTasks, employee) {
   const map = {};
   if (!Array.isArray(apiTasks)) return map;
@@ -618,7 +625,7 @@ export function tasksMapFromApi(apiTasks, employee) {
     const due = t.dueAt ? new Date(t.dueAt) : new Date();
     const date = Number.isNaN(due.getTime())
       ? getEmpAppToday()
-      : due.toISOString().slice(0, 10);
+      : localDateKey(due);
     const deadline = t.dueAt && !Number.isNaN(due.getTime())
       ? `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`
       : "17:00";

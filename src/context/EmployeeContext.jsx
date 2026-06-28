@@ -141,91 +141,6 @@ export function EmployeeProvider({ children }) {
     }
   }, []);
 
-  const didBootstrap = useRef(false);
-
-  useEffect(() => {
-    if (didBootstrap.current) return;
-    didBootstrap.current = true;
-
-    let cancelled = false;
-
-    async function bootstrap() {
-      setLoading(true);
-      try {
-        const empRes = await apiGet("/api/v1/employees", {
-          headers: getCrmHeaders(),
-          cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
-        });
-        const employees = unwrapApiData(empRes);
-        const matched = employees.find((e) => e.name === CURRENT_EMPLOYEE.name) || employees[0];
-        if (matched && !cancelled) {
-          const mapped = { ...CURRENT_EMPLOYEE, ...mapApiEmployee(matched) };
-          setEmployee(mapped);
-          storeEmployee(mapped);
-          setTeamEmployees(employees.map((e) => mapApiEmployee(e)));
-          setUsingApi(true);
-
-          try {
-            await loadEmployeeWorkspace(mapped.id, mapped);
-          } catch {
-            /* workspace partial load is ok */
-          }
-          try {
-            const sopRes = await apiGet("/api/sop/all", { cacheTtl: EMPLOYEE_LIST_CACHE_TTL });
-            if (sopRes.success && sopRes.sops?.length) {
-              setSopsState(mergeApiSopsWithLocal(sopRes.sops));
-            }
-          } catch {
-            setSopsState(ALL_EMP_SOPS.map(normalizeCallSop));
-          }
-          if (!cancelled) {
-            setLoading(false);
-            return;
-          }
-        }
-      } catch {
-        // fall through to mock
-      }
-      if (!cancelled) {
-        const stored = getStoredEmployee();
-        const hasStoredReal = stored?.id && stored.id !== MOCK_EMPLOYEE_ID;
-        if (!hasStoredReal) {
-          setUsingApi(false);
-          setLeads(EMP_LEADS);
-          setTasksState(createInitialTasks());
-          setMeetingsUpcoming(EMP_MEETINGS_UPCOMING);
-          setMeetingsHistory(EMP_MEETINGS_HISTORY);
-        } else {
-          setEmployee({ ...CURRENT_EMPLOYEE, ...stored });
-          setUsingApi(shouldPersistToApi(false));
-          try {
-            await loadEmployeeWorkspace(stored.id, { ...CURRENT_EMPLOYEE, ...stored });
-          } catch {
-            /* partial reload ok */
-          }
-        }
-        setLoading(false);
-      }
-    }
-
-    bootstrap();
-    return () => { cancelled = true; };
-  }, []);
-
-  const refreshTasks = useCallback(async (empId = employee.id) => {
-    try {
-      const res = await apiGet(`/api/v1/employee/${empId}/tasks`, {
-        headers: getCrmHeaders(),
-        cacheTtl: EMPLOYEE_CACHE_TTL,
-      });
-      const items = unwrapApiData(res);
-      setTasksState(tasksMapFromApi(items, employee));
-      return true;
-    } catch {
-      return false;
-    }
-  }, [employee]);
-
   const resolveApiEmployeeId = useCallback(async (preferredId, preferredName) => {
     if (!isMockEmployeeId(preferredId)) return preferredId;
 
@@ -260,6 +175,25 @@ export function EmployeeProvider({ children }) {
     setUsingApi(true);
     return matched.id;
   }, [employee, teamEmployees]);
+
+  const refreshTasks = useCallback(async (empId = employee.id, empProfile = employee) => {
+    try {
+      let resolvedId = empId;
+      if (isMockEmployeeId(empId)) {
+        resolvedId = await resolveApiEmployeeId(empId, empProfile?.name);
+      }
+      const res = await apiGet(`/api/v1/employee/${resolvedId}/tasks`, {
+        headers: getCrmHeaders(),
+        cacheTtl: EMPLOYEE_CACHE_TTL,
+      });
+      const items = unwrapApiData(res);
+      setTasksState(tasksMapFromApi(items, empProfile));
+      setUsingApi(true);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [employee, resolveApiEmployeeId]);
 
   const refreshFollowUps = useCallback(async (empId = employee.id, leadList = leads) => {
     try {
@@ -756,6 +690,80 @@ export function EmployeeProvider({ children }) {
       return false;
     }
   }, [employee, leads, resolveApiEmployeeId]);
+
+  const didBootstrap = useRef(false);
+
+  useEffect(() => {
+    if (didBootstrap.current) return;
+    didBootstrap.current = true;
+
+    let cancelled = false;
+
+    async function bootstrap() {
+      setLoading(true);
+      try {
+        const empRes = await apiGet("/api/v1/employees", {
+          headers: getCrmHeaders(),
+          cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
+        });
+        const employees = unwrapApiData(empRes);
+        const matched = employees.find((e) => e.name === CURRENT_EMPLOYEE.name) || employees[0];
+        if (matched && !cancelled) {
+          const mapped = { ...CURRENT_EMPLOYEE, ...mapApiEmployee(matched) };
+          setEmployee(mapped);
+          storeEmployee(mapped);
+          setTeamEmployees(employees.map((e) => mapApiEmployee(e)));
+          setUsingApi(true);
+
+          try {
+            await loadEmployeeWorkspace(mapped.id, mapped);
+            await refreshTasks(mapped.id, mapped);
+          } catch {
+            /* workspace partial load is ok */
+          }
+          try {
+            const sopRes = await apiGet("/api/sop/all", { cacheTtl: EMPLOYEE_LIST_CACHE_TTL });
+            if (sopRes.success && sopRes.sops?.length) {
+              setSopsState(mergeApiSopsWithLocal(sopRes.sops));
+            }
+          } catch {
+            setSopsState(ALL_EMP_SOPS.map(normalizeCallSop));
+          }
+          if (!cancelled) {
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {
+        // fall through to mock
+      }
+      if (!cancelled) {
+        const stored = getStoredEmployee();
+        const hasStoredReal = stored?.id && stored.id !== MOCK_EMPLOYEE_ID;
+        if (!hasStoredReal) {
+          setUsingApi(false);
+          setLeads(EMP_LEADS);
+          setTasksState(createInitialTasks());
+          setMeetingsUpcoming(EMP_MEETINGS_UPCOMING);
+          setMeetingsHistory(EMP_MEETINGS_HISTORY);
+        } else {
+          const profile = { ...CURRENT_EMPLOYEE, ...stored };
+          setEmployee(profile);
+          setUsingApi(shouldPersistToApi(false));
+          try {
+            await loadEmployeeWorkspace(stored.id, profile);
+            await refreshTasks(stored.id, profile);
+          } catch {
+            /* partial reload ok */
+          }
+        }
+        setLoading(false);
+      }
+    }
+
+    bootstrap();
+    return () => { cancelled = true; };
+  }, []);
 
   const createMeeting = useCallback(async (form) => {
     const lead = leads.find((l) => String(l.id) === String(form.leadId));
