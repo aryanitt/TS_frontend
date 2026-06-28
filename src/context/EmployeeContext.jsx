@@ -3,16 +3,10 @@ import toast from "react-hot-toast";
 import {
   CURRENT_EMPLOYEE,
   MOCK_EMPLOYEE_ID,
-  createInitialTasks,
   normalizeTasksMap,
   tasksMapFromApi,
   priorityToApi,
-  EMP_LEADS,
-  EMP_FOLLOWUPS,
   empLeadFromDrawerPayload,
-  EMP_CALLS,
-  EMP_LEAD_CALL_ACTIVITY,
-  ALL_EMP_SOPS,
   mergeApiSopsWithLocal,
   normalizeCallSop,
   getFollowUpUrgency,
@@ -23,8 +17,6 @@ import {
   callFromApi,
   followUpToApiPayload,
   followUpFromApi,
-  EMP_MEETINGS_UPCOMING,
-  EMP_MEETINGS_HISTORY,
   meetingToApiPayload,
   meetingFromApi,
   partitionMeetings,
@@ -74,9 +66,9 @@ function isMockEmployeeId(id) {
 
 export function EmployeeProvider({ children }) {
   const [employee, setEmployee] = useState(readBootstrappedEmployee);
-  const [leads, setLeads] = useState(EMP_LEADS);
+  const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [usingApi, setUsingApi] = useState(false);
+  const [usingApi, setUsingApi] = useState(() => typeof window !== "undefined");
 
   const refreshLeads = useCallback(async (empId = employee.id) => {
     try {
@@ -94,14 +86,12 @@ export function EmployeeProvider({ children }) {
   }, [employee.id]);
 
   const [tasks, setTasksState] = useState({});
-  const [followUps, setFollowUpsState] = useState(() =>
-    EMP_FOLLOWUPS.map((f) => ({ ...f, done: false })),
-  );
-  const [calls, setCalls] = useState(EMP_CALLS);
-  const [meetingsUpcoming, setMeetingsUpcoming] = useState(EMP_MEETINGS_UPCOMING);
-  const [meetingsHistory, setMeetingsHistory] = useState(EMP_MEETINGS_HISTORY);
-  const [activities, setActivities] = useState(EMP_LEAD_CALL_ACTIVITY);
-  const [sops, setSopsState] = useState(() => ALL_EMP_SOPS.map(normalizeCallSop));
+  const [followUps, setFollowUpsState] = useState([]);
+  const [calls, setCalls] = useState([]);
+  const [meetingsUpcoming, setMeetingsUpcoming] = useState([]);
+  const [meetingsHistory, setMeetingsHistory] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [sops, setSopsState] = useState([]);
   const [teamEmployees, setTeamEmployees] = useState([]);
 
   const loadEmployeeWorkspace = useCallback(async (empId, empProfile) => {
@@ -111,28 +101,25 @@ export function EmployeeProvider({ children }) {
         cacheTtl: EMPLOYEE_CACHE_TTL,
       });
       const data = unwrapApiData(res) || res.data || res;
-      if (Array.isArray(data.tasks)) {
-        setTasksState(tasksMapFromApi(data.tasks, empProfile));
-      }
       const workspaceLeads = Array.isArray(data.leads)
         ? data.leads.map((l) => apiLeadToEmployee(l, AVATAR_COLORS))
         : [];
-      if (workspaceLeads.length) {
-        setLeads(workspaceLeads);
-      }
-      const leadSource = workspaceLeads;
-      if (Array.isArray(data.followups)) {
-        setFollowUpsState(
-          data.followups.map((f) => followUpFromApi(f, leadSource)),
-        );
-      }
-      if (Array.isArray(data.calls)) {
-        setCalls(data.calls.map((c) => callFromApi(c, workspaceLeads)));
-      }
-      if (Array.isArray(data.meetings)) {
-        const split = partitionMeetings(data.meetings, workspaceLeads);
-        setMeetingsUpcoming(split.upcoming);
-        setMeetingsHistory(split.history);
+      setLeads(workspaceLeads);
+      setFollowUpsState(
+        Array.isArray(data.followups)
+          ? data.followups.map((f) => followUpFromApi(f, workspaceLeads))
+          : [],
+      );
+      setCalls(
+        Array.isArray(data.calls)
+          ? data.calls.map((c) => callFromApi(c, workspaceLeads))
+          : [],
+      );
+      const split = partitionMeetings(Array.isArray(data.meetings) ? data.meetings : [], workspaceLeads);
+      setMeetingsUpcoming(split.upcoming);
+      setMeetingsHistory(split.history);
+      if (Array.isArray(data.tasks)) {
+        setTasksState(tasksMapFromApi(data.tasks, empProfile));
       }
       setUsingApi(true);
       return true;
@@ -327,9 +314,9 @@ export function EmployeeProvider({ children }) {
   const setTasks = useCallback((updater) => {
     setTasksState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      return normalizeTasksMap(next, { useMockFallback: !usingApi });
+      return normalizeTasksMap(next, { useMockFallback: false });
     });
-  }, [usingApi]);
+  }, []);
 
   const setFollowUps = useCallback((updater) => {
     setFollowUpsState((prev) => {
@@ -727,7 +714,7 @@ export function EmployeeProvider({ children }) {
               setSopsState(mergeApiSopsWithLocal(sopRes.sops));
             }
           } catch {
-            setSopsState(ALL_EMP_SOPS.map(normalizeCallSop));
+            /* keep empty until SOPs load */
           }
           if (!cancelled) {
             setLoading(false);
@@ -739,23 +726,18 @@ export function EmployeeProvider({ children }) {
       }
       if (!cancelled) {
         const stored = getStoredEmployee();
-        const hasStoredReal = stored?.id && stored.id !== MOCK_EMPLOYEE_ID;
-        if (!hasStoredReal) {
-          setUsingApi(false);
-          setLeads(EMP_LEADS);
-          setTasksState(createInitialTasks());
-          setMeetingsUpcoming(EMP_MEETINGS_UPCOMING);
-          setMeetingsHistory(EMP_MEETINGS_HISTORY);
-        } else {
-          const profile = { ...CURRENT_EMPLOYEE, ...stored };
-          setEmployee(profile);
-          setUsingApi(shouldPersistToApi(false));
-          try {
-            await loadEmployeeWorkspace(stored.id, profile);
-            await refreshTasks(stored.id, profile);
-          } catch {
-            /* partial reload ok */
+        const profile = stored?.id && stored.id !== MOCK_EMPLOYEE_ID
+          ? { ...CURRENT_EMPLOYEE, ...stored }
+          : { ...CURRENT_EMPLOYEE, ...readBootstrappedEmployee() };
+        setEmployee(profile);
+        setUsingApi(true);
+        try {
+          if (profile.id && !isMockEmployeeId(profile.id)) {
+            await loadEmployeeWorkspace(profile.id, profile);
+            await refreshTasks(profile.id, profile);
           }
+        } catch {
+          /* show empty workspace until API recovers */
         }
         setLoading(false);
       }

@@ -69,6 +69,142 @@ export const EMP_LEADS = [
   { id: 12, name: "Siddharth Roy", company: "DataPro Pvt", status: "ni", stage: "Closed", source: "Cold Call", budget: "₹2L", service: "CRM Setup & Onboarding", last: "4d ago", av: "SR", color: "#ec4899" },
 ];
 
+export function buildPipelineChartFromLeads(leads = []) {
+  const counts = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, 0]));
+  for (const lead of leads) {
+    const raw = String(lead.stage || lead.pipelineStage || "attempted").toLowerCase();
+    const stageId = EMP_KANBAN_STAGES.find((s) => s.id === raw.replace(/\s+/g, "_"))
+      || EMP_KANBAN_STAGES.find((s) => s.label.toLowerCase() === raw)
+      || EMP_KANBAN_STAGES.find((s) => raw.includes(s.label.toLowerCase()))
+      || EMP_KANBAN_STAGES[1];
+    counts[stageId.id] = (counts[stageId.id] || 0) + 1;
+  }
+  const max = Math.max(1, ...Object.values(counts));
+  return EMP_KANBAN_STAGES.map((s) => ({
+    label: s.label,
+    count: counts[s.id] || 0,
+    pct: Math.round(((counts[s.id] || 0) / max) * 100),
+    color: s.color,
+  }));
+}
+
+export function buildSourceChartFromLeads(leads = []) {
+  if (!leads.length) return [];
+  const counts = {};
+  for (const lead of leads) {
+    const src = lead.source || "Other";
+    counts[src] = (counts[src] || 0) + 1;
+  }
+  const total = leads.length;
+  const colors = ["#3b82f6", "#7c3aed", "#0ea5e9", "#10b981", "#f59e0b", "#f97316"];
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([label, count], i) => ({
+      label,
+      pct: Math.round((count / total) * 100),
+      color: colors[i % colors.length],
+    }));
+}
+
+export function filterCallsForPeriod(calls, period) {
+  const list = Array.isArray(calls) ? calls : [];
+  if (period === "today") return list.filter((c) => c.period === "today");
+  if (period === "week") return list.filter((c) => c.period === "today" || c.period === "week");
+  return list;
+}
+
+export function computeCallStatsFromCalls(calls, period = "today") {
+  const list = filterCallsForPeriod(calls, period);
+  const dials = list.length;
+  const missed = list.filter(
+    (c) => c.type === "miss" || /not pick|missed/i.test(String(c.outcome || "")),
+  ).length;
+  const connected = dials - missed;
+  const pickupRate = dials ? Math.round((connected / dials) * 100) : 0;
+  const missRate = dials ? Math.round((missed / dials) * 100) : 0;
+  const durations = list.map((c) => parseDurationToSeconds(c.duration)).filter((s) => s > 0);
+  const avgSecs = durations.length
+    ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+    : 0;
+  const avgDuration = avgSecs ? formatDurationFromSeconds(avgSecs) : "—";
+  const totalSecs = durations.reduce((a, b) => a + b, 0);
+  const totalTalk = totalSecs
+    ? `${Math.floor(totalSecs / 3600)}h ${Math.floor((totalSecs % 3600) / 60)}m`.replace(/^0h /, "")
+    : "—";
+  const hotLeads = list.filter((c) => /hot|qualified|interested|demo|proposal/i.test(String(c.outcome || ""))).length;
+  const callbacks = list.filter((c) => /callback|follow/i.test(String(c.outcome || ""))).length;
+  const ratings = list.map((c) => c.rating).filter((r) => r > 0);
+  const quality = ratings.length
+    ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 20)
+    : pickupRate;
+  return { dials, connected, missed, callbacks, pickupRate, quality, missRate, avgDuration, hotLeads, totalTalk };
+}
+
+const DASHBOARD_ACTIVITY_EMOJI = {
+  call: "📞", email: "✉️", whatsapp: "💬", meeting: "📅", note: "📝", proposal: "📄",
+};
+
+export function buildRecentActivityFeed(activities = {}, calls = [], limit = 5) {
+  const items = [];
+  for (const events of Object.values(activities)) {
+    for (const e of events) {
+      items.push({ emoji: DASHBOARD_ACTIVITY_EMOJI[e.type] || "•", text: e.text, time: e.time });
+    }
+  }
+  for (const c of calls.slice(0, 20)) {
+    const kind = c.type === "miss" ? "Missed call" : c.type === "in" ? "Inbound call" : "Outbound call";
+    items.push({
+      emoji: "📞",
+      text: `${kind}: ${c.name}${c.duration && c.duration !== "—" ? ` (${c.duration})` : ""}`,
+      time: c.date,
+    });
+  }
+  return items.slice(0, limit);
+}
+
+export function buildDashboardAgenda({ meetingsUpcoming = [], tasks = {}, followUps = [] }) {
+  const today = getEmpAppToday();
+  const items = [];
+
+  for (const m of meetingsUpcoming) {
+    if (m.date !== today && !String(m.time || "").startsWith("Today")) continue;
+    const timeMatch = String(m.time || "").match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?|\d{1,2}:\d{2})/i);
+    items.push({
+      time: timeMatch ? timeMatch[1] : "—",
+      title: `Meeting: ${m.lead || m.title}`,
+      sub: m.company || m.agenda || "",
+      hot: false,
+      done: false,
+    });
+  }
+
+  const todayTasks = tasks[today] || [];
+  for (const t of todayTasks) {
+    if (t.status === "done" || t.status === "completed") continue;
+    items.push({
+      time: t.deadlineTime || t.time || "—",
+      title: t.name || t.title || "Task",
+      sub: t.leadName || t.note || "",
+      hot: t.priority === "high" || t.priority === "urgent",
+      done: false,
+    });
+  }
+
+  for (const f of followUps) {
+    if (f.done) continue;
+    items.push({
+      time: f.time || "—",
+      title: `${f.type || "Follow-up"}: ${f.name}`,
+      sub: f.company || f.note || "",
+      hot: f.urgency === "overdue" || f.urgency === "today",
+      done: false,
+    });
+  }
+
+  return items;
+}
+
 export const EMP_PIPELINE = [
   { label: "Not Pick", count: 28, pct: 100, color: "#94a3b8" },
   { label: "Attempted", count: 72, pct: 95, color: "#3b82f6" },
