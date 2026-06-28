@@ -118,10 +118,39 @@ async function revalidateInBackground(url, options, key, ttl) {
   try {
     const response = await performFetch(url, options);
     if (!response.ok) return;
-    const data = await response.json();
+    const text = await response.text();
+    if (!text.trim()) return;
+    const data = JSON.parse(text);
     storeGetCache(key, data, ttl);
   } catch {
     // silent background refresh
+  }
+}
+
+function formatApiError(data, fallback) {
+  if (!data || typeof data !== "object") return fallback;
+  const base = data.message || data.error || fallback;
+  const fieldErrors = data.errors?.fieldErrors;
+  if (!fieldErrors || typeof fieldErrors !== "object") return base;
+  const details = Object.entries(fieldErrors)
+    .flatMap(([field, messages]) => (
+      Array.isArray(messages) ? messages.map((msg) => `${field}: ${msg}`) : []
+    ))
+    .join("; ");
+  return details ? `${base} — ${details}` : base;
+}
+
+function parseApiResponseBody(text, contentType) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const looksJson = contentType.includes("application/json")
+    || trimmed.startsWith("{")
+    || trimmed.startsWith("[");
+  if (!looksJson) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
   }
 }
 
@@ -175,8 +204,11 @@ export async function apiJson(path, options = {}) {
   }
 
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    const preview = (await response.text()).slice(0, 80);
+  const text = await response.text();
+  const data = parseApiResponseBody(text, contentType);
+
+  if (data == null) {
+    const preview = text.slice(0, 80);
     const err = new Error(
       preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")
         ? "API request hit the frontend instead of the backend. Check VITE_API_URL."
@@ -186,10 +218,8 @@ export async function apiJson(path, options = {}) {
     throw err;
   }
 
-  const data = await response.json();
-
   if (!response.ok) {
-    const message = data?.message || data?.error || response.statusText || "Request failed";
+    const message = formatApiError(data, response.statusText || "Request failed");
     const err = new Error(message);
     err.status = response.status;
     err.data = data;

@@ -286,16 +286,19 @@ const MEETING_PLATFORM_LABELS = {
 
 export function meetingToApiPayload(form, employeeId) {
   const platformLabel = MEETING_PLATFORM_LABELS[form.platform] || form.platform || "Google Meet";
-  return {
+  const payload = {
     leadId: Number(form.leadId),
     employeeId: Number(employeeId),
     title: form.title.trim(),
     scheduledAt: `${form.date}T${form.time || "09:00"}:00`,
-    meetLink: form.meetLink || null,
     location: platformLabel,
     durationMin: 30,
-    agenda: form.agenda?.trim() || null,
   };
+  const meetLink = String(form.meetLink || "").trim();
+  if (meetLink) payload.meetLink = meetLink;
+  const agenda = String(form.agenda || "").trim();
+  if (agenda) payload.agenda = agenda;
+  return payload;
 }
 
 export function partitionMeetings(apiMeetings, leads = []) {
