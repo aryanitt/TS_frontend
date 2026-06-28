@@ -1,8 +1,9 @@
 {
   "framework": "tanstack-start",
-  "build": {
-    "env": {
-      "VITE_API_URL": "https://mediumturquoise-capybara-737767.hostingersite.com"
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://mediumturquoise-capybara-737767.hostingersite.com/api/:path*"
     }
-  }
+  ]
 }

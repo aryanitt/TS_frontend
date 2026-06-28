@@ -1,7 +1,10 @@
 /** LRMS v7 employee panel mock data — mirrors lrms-v7.html */
 
+/** Mock-only id — never exists in MySQL; must be replaced after API bootstrap. */
+export const MOCK_EMPLOYEE_ID = 101;
+
 export const CURRENT_EMPLOYEE = {
-  id: 101,
+  id: MOCK_EMPLOYEE_ID,
   name: "Amit Kumar",
   role: "Sales Manager",
   initials: "AK",
@@ -273,6 +276,96 @@ export const MEETING_PLATFORMS = [
 export function generateGoogleMeetLink() {
   const part = () => Math.random().toString(36).slice(2, 6);
   return `https://meet.google.com/${part()}-${part()}-${part()}`;
+}
+
+const MEETING_PLATFORM_LABELS = {
+  google_meet: "Google Meet",
+  zoom: "Zoom",
+  teams: "Teams",
+};
+
+export function meetingToApiPayload(form, employeeId) {
+  const platformLabel = MEETING_PLATFORM_LABELS[form.platform] || form.platform || "Google Meet";
+  return {
+    leadId: form.leadId,
+    employeeId,
+    title: form.title.trim(),
+    scheduledAt: `${form.date}T${form.time || "09:00"}:00`,
+    meetLink: form.meetLink || null,
+    location: platformLabel,
+    durationMin: 30,
+    agenda: form.agenda?.trim() || null,
+  };
+}
+
+export function partitionMeetings(apiMeetings, leads = []) {
+  const now = Date.now();
+  const mapped = (Array.isArray(apiMeetings) ? apiMeetings : []).map((m) => meetingFromApi(m, leads));
+  const upcoming = [];
+  const history = [];
+
+  for (const meeting of mapped) {
+    if (meeting.status === "cancelled") continue;
+    const at = new Date(meeting.scheduledAt).getTime();
+    if (meeting.status === "completed" || at < now) {
+      history.push({
+        ...meeting,
+        outcome: meeting.outcome || (meeting.status === "completed" ? "Completed" : "Held"),
+      });
+    } else {
+      upcoming.push(meeting);
+    }
+  }
+
+  upcoming.sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
+  history.sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+  return { upcoming, history };
+}
+
+export function meetingFromApi(apiMeeting, leads = []) {
+  const lead = leads.find((l) => String(l.id) === String(apiMeeting.leadId));
+  const scheduled = apiMeeting.scheduledAt ? new Date(apiMeeting.scheduledAt) : new Date();
+  const today = getEmpAppToday();
+  const schedDay = Number.isNaN(scheduled.getTime())
+    ? today
+    : scheduled.toISOString().slice(0, 10);
+  const clock24 = Number.isNaN(scheduled.getTime())
+    ? "09:00"
+    : `${String(scheduled.getHours()).padStart(2, "0")}:${String(scheduled.getMinutes()).padStart(2, "0")}`;
+  const clock12 = Number.isNaN(scheduled.getTime())
+    ? clock24
+    : scheduled.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  let time;
+  if (schedDay === today) time = `Today, ${clock12}`;
+  else if (schedDay === tomorrowStr) time = `Tomorrow, ${clock12}`;
+  else {
+    time = `${scheduled.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}, ${clock12}`;
+  }
+
+  const platform = apiMeeting.location || "Google Meet";
+  const mom = typeof apiMeeting.mom === "object" && apiMeeting.mom ? apiMeeting.mom : {};
+
+  return {
+    id: apiMeeting.id,
+    leadId: apiMeeting.leadId,
+    title: apiMeeting.title || "Meeting",
+    time,
+    date: schedDay,
+    scheduledAt: apiMeeting.scheduledAt,
+    platform,
+    lead: lead?.name || "—",
+    company: lead?.company || "—",
+    color: lead?.color || "#e11d48",
+    meetLink: apiMeeting.meetLink || "",
+    status: apiMeeting.status || "scheduled",
+    outcome: mom.outcome || undefined,
+    agenda: mom.agenda || "",
+  };
 }
 
 export const EMP_TEAM_CALL = [
@@ -643,8 +736,8 @@ export function callToApiPayload(call, employeeId) {
     durationSec: durationSec || null,
     startedAt: call.startedAt || now.toISOString(),
     endedAt: call.endedAt || now.toISOString(),
-    notes: call.note || call.notes || null,
-    aiSummary: call.note || call.aiSummary || null,
+    notes: call.notes || (call.note ? String(call.note).slice(0, 500) : null),
+    aiSummary: call.aiMoM || call.note || call.aiSummary || null,
     sopId: call.sopId || null,
     checklistProgress,
   };
@@ -1244,3 +1337,126 @@ export function buildAllEmployeeSops() {
 }
 
 export const ALL_EMP_SOPS = buildAllEmployeeSops();
+
+function normalizeSopScripts(scripts, fallbackOpening = "") {
+  const src = scripts && typeof scripts === "object" ? scripts : {};
+  return {
+    opening: src.opening || fallbackOpening || "",
+    talkingPoints: Array.isArray(src.talkingPoints) ? src.talkingPoints : [],
+    tips: src.tips || "",
+  };
+}
+
+function normalizeSopSteps(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return [{
+      id: "step-1",
+      label: "Step 1",
+      questions: [],
+      discovery: [],
+      checklist: [],
+      scripts: normalizeSopScripts(null),
+    }];
+  }
+  return steps.map((step, idx) => {
+    if (typeof step === "string") {
+      return {
+        id: `step-${idx + 1}`,
+        label: step.trim() || `Step ${idx + 1}`,
+        questions: [],
+        discovery: [],
+        checklist: [],
+        scripts: normalizeSopScripts(null, step),
+      };
+    }
+    return {
+      id: step?.id || `step-${idx + 1}`,
+      label: step?.label || step?.title || step?.name || `Step ${idx + 1}`,
+      questions: Array.isArray(step?.questions) ? step.questions : [],
+      discovery: Array.isArray(step?.discovery) ? step.discovery : [],
+      checklist: Array.isArray(step?.checklist) ? step.checklist : [],
+      scripts: normalizeSopScripts(step?.scripts, step?.script || ""),
+    };
+  });
+}
+
+function sopSubtitle(source, fallback = "") {
+  if (source?.sub != null && String(source.sub).trim()) return String(source.sub).trim();
+  const desc = source?.description;
+  if (typeof desc === "string" && desc.trim()) return desc.trim().slice(0, 80);
+  if (source?.category != null && String(source.category).trim()) return String(source.category);
+  return fallback;
+}
+
+/** Ensure Call Assistant always receives safe SOP shape (prevents runtime .map crashes). */
+export function normalizeCallSop(sop) {
+  if (!sop || typeof sop !== "object") return null;
+  try {
+    return {
+      ...sop,
+      id: sop.id ?? sop.sopId ?? `sop-${sop.title || "unknown"}`,
+      title: sop.title || "SOP Guide",
+      category: sop.category || "General",
+      sub: sopSubtitle(sop, sop.sub || ""),
+      budgetRange: sop.budgetRange || "—",
+      icon: sop.icon || "📋",
+      objections: Array.isArray(sop.objections) ? sop.objections : [],
+      crossSell: sop.crossSell && typeof sop.crossSell === "object" ? sop.crossSell : null,
+      steps: normalizeSopSteps(sop.steps || sop.instruction_steps || sop.instructionSteps),
+    };
+  } catch {
+    return normalizeCallSop({
+      id: sop.id || "fallback",
+      title: String(sop.title || "SOP Guide"),
+      steps: [],
+    });
+  }
+}
+
+function sopFromApiRow(api) {
+  return normalizeCallSop({
+    id: api.id,
+    title: api.title || "SOP",
+    sub: sopSubtitle(api),
+    category: api.category || "General",
+    budgetRange: api.budgetRange || "—",
+    duration: api.estimated_time || api.estimatedTime || "—",
+    icon: api.icon || "📋",
+    steps: api.instruction_steps || api.instructionSteps || api.steps,
+    objections: Array.isArray(api.objections) ? api.objections : [],
+    crossSell: api.crossSell || null,
+  });
+}
+
+/** Keep rich Call Assistant fields when hydrating SOPs from the API. */
+export function mergeApiSopsWithLocal(apiSops) {
+  if (!Array.isArray(apiSops) || apiSops.length === 0) {
+    return ALL_EMP_SOPS.map(normalizeCallSop);
+  }
+
+  try {
+    const localById = new Map(ALL_EMP_SOPS.map((s) => [Number(s.id), s]));
+    const apiIds = new Set();
+
+    const merged = apiSops.map((api) => {
+      const id = Number(api.id);
+      apiIds.add(id);
+      const local = localById.get(id);
+      if (local) {
+        return normalizeCallSop({
+          ...local,
+          title: api.title || local.title,
+          category: api.category || local.category,
+          sub: sopSubtitle(api, local.sub),
+          steps: api.instruction_steps || api.instructionSteps || api.steps || local.steps,
+        });
+      }
+      return sopFromApiRow(api);
+    });
+
+    const extras = ALL_EMP_SOPS.filter((s) => !apiIds.has(Number(s.id)));
+    return [...merged, ...extras.map(normalizeCallSop)];
+  } catch {
+    return ALL_EMP_SOPS.map(normalizeCallSop);
+  }
+}

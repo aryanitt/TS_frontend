@@ -142,3 +142,56 @@ export function apiEmployeeToAdmin(emp) {
     status: emp.status,
   };
 }
+
+const PIPELINE_STAGE_MAP = [
+  ["closed won", "closed_won"],
+  ["converted", "closed_won"],
+  ["won", "closed_won"],
+  ["negotiation", "negotiation"],
+  ["proposal", "proposal"],
+  ["qualified", "qualified"],
+  ["contacted", "contacted"],
+  ["new", "new"],
+];
+
+export function apiLeadToPipeline(lead) {
+  const stageRaw = String(
+    lead.pipelineStage || lead.pipeline_stage || lead.status || "new",
+  ).toLowerCase();
+  let stage = "new";
+  for (const [needle, id] of PIPELINE_STAGE_MAP) {
+    if (stageRaw.includes(needle)) {
+      stage = id;
+      break;
+    }
+  }
+  const temp = String(lead.temperature || "").toLowerCase();
+  const priority = temp.includes("hot") ? "HOT" : temp.includes("cold") ? "COLD" : "WARM";
+  const assignedTo = lead.assignedTo;
+  const owner = (typeof assignedTo === "object" && assignedTo?.name)
+    || lead.assigneeName
+    || lead.assignee_name
+    || lead.employeeName
+    || "";
+
+  return {
+    id: lead.id,
+    _dbId: lead.id,
+    stage,
+    name: lead.leadName || lead.lead_name || "Lead",
+    company: lead.companyName || lead.company_name || "—",
+    value: Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0),
+    priority,
+    updatedAt: lead.updatedAt || lead.updated_at || lead.createdAt || new Date().toISOString(),
+    phone: lead.phone || "",
+    email: lead.email || "",
+    city: lead.city || "",
+    source: lead.source || "Website",
+    owner,
+    assignee: owner,
+    employeeName: owner,
+    winProbability: lead.winProbability ?? lead.win_probability ?? 50,
+    activities: [],
+    tasks: [],
+  };
+}

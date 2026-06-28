@@ -16,16 +16,23 @@ export function getApiBase() {
   if (envUrl != null && String(envUrl).trim() !== "") {
     return String(envUrl).replace(/\/$/, "");
   }
+  // Browser: same-origin `/api` (Vercel rewrite in prod, Vite proxy in dev).
+  if (typeof window !== "undefined") {
+    return "";
+  }
+  // SSR / Node must use an absolute backend URL.
   if (import.meta.env.PROD) {
     return PRODUCTION_API_BASE;
   }
-  // Dev: Vite proxy `/api` → backend on localhost:5000.
-  return "";
+  return "http://localhost:5000";
 }
 
 /** True when writes should go to the backend (production API or live session). */
 export function shouldPersistToApi(usingApi = false) {
-  return usingApi || Boolean(getApiBase());
+  if (usingApi) return true;
+  if (getApiBase()) return true;
+  // Browser uses same-origin `/api` (Vercel rewrite or Vite dev proxy).
+  return typeof window !== "undefined";
 }
 
 export function apiUrl(path) {
@@ -143,7 +150,22 @@ export async function apiJson(path, options = {}) {
     }
   }
 
-  const response = await performFetch(url, { ...fetchOptions, method: httpMethod });
+  let response;
+  try {
+    response = await performFetch(url, { ...fetchOptions, method: httpMethod });
+  } catch (err) {
+    const isNetwork = err instanceof TypeError
+      || String(err?.message || "").toLowerCase().includes("failed to fetch");
+    if (!isNetwork) throw err;
+    const base = getApiBase();
+    const target = base || (typeof window !== "undefined" ? `${window.location.origin}/api` : PRODUCTION_API_BASE);
+    throw new Error(
+      `Cannot reach the API at ${target}. `
+      + (typeof window !== "undefined" && !base
+        ? "If testing locally, start the backend: cd backend && npm run dev"
+        : "Check your connection and redeploy the frontend if you recently changed API settings."),
+    );
+  }
 
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {

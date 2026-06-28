@@ -18,6 +18,8 @@ import {
   timeAgoShort,
 } from "../data/pipelineMock.js";
 import { apiGet, apiPatch, invalidateCache } from "../lib/api.js";
+import { getAdminCrmHeaders } from "../lib/crmContext.js";
+import { apiLeadToPipeline, unwrapApiData } from "../lib/leadSync.js";
 import { getAssignmentState, getLeadEmployeeName } from "../lib/leadAssignment.js";
 
 function MetricTile({ label, value, sub, icon: Icon, iconBg, iconColor }) {
@@ -144,19 +146,39 @@ export default function Pipeline() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await apiGet("/api/dashboard/pipeline/leads", { skipCache: true, cacheTtl: 0 });
-        if (cancelled || !data.leads?.length) return;
+        const res = await apiGet("/api/v1/leads?limit=200", {
+          headers: getAdminCrmHeaders(),
+          skipCache: true,
+          cacheTtl: 0,
+        });
+        const items = unwrapApiData(res);
+        if (cancelled || !items.length) return;
         const assignmentState = getAssignmentState();
         setLeads(
-          data.leads.map((lead) => {
+          items.map((lead) => {
+            const mapped = apiLeadToPipeline(lead);
             const employeeName = getLeadEmployeeName(lead, assignmentState);
             return employeeName
-              ? { ...lead, owner: employeeName, assignee: employeeName, employeeName }
-              : lead;
+              ? { ...mapped, owner: employeeName, assignee: employeeName, employeeName }
+              : mapped;
           }),
         );
       } catch {
-        // keep PIPELINE_LEADS mock
+        try {
+          const data = await apiGet("/api/dashboard/pipeline/leads", { skipCache: true, cacheTtl: 0 });
+          if (cancelled || !data.leads?.length) return;
+          const assignmentState = getAssignmentState();
+          setLeads(
+            data.leads.map((lead) => {
+              const employeeName = getLeadEmployeeName(lead, assignmentState);
+              return employeeName
+                ? { ...lead, owner: employeeName, assignee: employeeName, employeeName }
+                : lead;
+            }),
+          );
+        } catch {
+          // keep PIPELINE_LEADS mock
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -220,9 +242,16 @@ export default function Pipeline() {
     applyLeadUpdate(updated);
     const dbId = lead._dbId || leadId;
     if (dbId && String(dbId).match(/^\d+$/)) {
-      apiPatch(`/api/dashboard/pipeline/leads/${dbId}`, { stage: stageId })
-        .then(() => invalidateCache("/api/dashboard"))
-        .catch(() => {});
+      const stageLabel = getStageMeta(stageId).label;
+      apiPatch(`/api/v1/leads/${dbId}/stage`, { stage: stageLabel, status: stageLabel }, {
+        headers: getAdminCrmHeaders(),
+      })
+        .then(() => invalidateCache("/api/v1"))
+        .catch(() => {
+          apiPatch(`/api/dashboard/pipeline/leads/${dbId}`, { stage: stageId })
+            .then(() => invalidateCache("/api/dashboard"))
+            .catch(() => {});
+        });
     }
     if (scroll) scrollToStage(stageId);
     toast.success(`Moved to ${target.label}`);
