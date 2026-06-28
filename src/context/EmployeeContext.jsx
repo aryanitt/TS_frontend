@@ -582,18 +582,6 @@ export function EmployeeProvider({ children }) {
     return followUp;
   }, [employee, leads, setFollowUps, setTasks, usingApi, resolveApiEmployeeId, refreshFollowUps]);
 
-  useEffect(() => {
-    if (loading) return;
-    if (!employee?.id) return;
-    refreshFollowUps(employee.id, leads);
-  }, [loading, employee?.id, refreshFollowUps, leads]);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!employee?.id) return;
-    refreshMeetings(employee.id, leads);
-  }, [loading, employee?.id, refreshMeetings, leads]);
-
   const completeFollowUp = useCallback(async (followUpId) => {
     setFollowUps((prev) => prev.map((f) => (f.id === followUpId ? { ...f, done: true } : f)));
     setTasks((prev) => {
@@ -797,6 +785,18 @@ export function EmployeeProvider({ children }) {
       return false;
     }
   }, [employee, leads, resolveApiEmployeeId]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!employee?.id) return;
+    refreshFollowUps(employee.id, leads);
+  }, [loading, employee?.id, refreshFollowUps, leads]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!employee?.id) return;
+    refreshMeetings(employee.id, leads);
+  }, [loading, employee?.id, refreshMeetings, leads]);
 
   const createMeeting = useCallback(async (form) => {
     const lead = leads.find((l) => String(l.id) === String(form.leadId));
