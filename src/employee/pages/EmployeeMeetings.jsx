@@ -345,7 +345,7 @@ export default function EmployeeMeetings() {
   const selectedPlatform = MEETING_PLATFORMS.find((p) => p.id === form.platform) || MEETING_PLATFORMS[0];
 
   const stats = useMemo(() => ({
-    today: meetingsUpcoming.filter((m) => m.time.toLowerCase().includes("today")).length,
+    today: meetingsUpcoming.filter((m) => String(m.time || "").toLowerCase().includes("today")).length,
     week: meetingsUpcoming.length,
     completed: meetingsHistory.length,
     googleMeet: meetingsUpcoming.filter((m) => m.platform === "Google Meet").length,

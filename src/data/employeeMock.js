@@ -147,7 +147,11 @@ const DASHBOARD_ACTIVITY_EMOJI = {
 
 export function buildRecentActivityFeed(activities = {}, calls = [], limit = 5) {
   const items = [];
-  for (const events of Object.values(activities)) {
+  const activityMap = activities && typeof activities === "object" && !Array.isArray(activities)
+    ? activities
+    : {};
+  for (const events of Object.values(activityMap)) {
+    if (!Array.isArray(events)) continue;
     for (const e of events) {
       items.push({ emoji: DASHBOARD_ACTIVITY_EMOJI[e.type] || "•", text: e.text, time: e.time });
     }
@@ -166,8 +170,11 @@ export function buildRecentActivityFeed(activities = {}, calls = [], limit = 5) 
 export function buildDashboardAgenda({ meetingsUpcoming = [], tasks = {}, followUps = [] }) {
   const today = getEmpAppToday();
   const items = [];
+  const meetings = Array.isArray(meetingsUpcoming) ? meetingsUpcoming : [];
+  const pendingFollowUps = Array.isArray(followUps) ? followUps : [];
+  const taskMap = tasks && typeof tasks === "object" ? tasks : {};
 
-  for (const m of meetingsUpcoming) {
+  for (const m of meetings) {
     if (m.date !== today && !String(m.time || "").startsWith("Today")) continue;
     const timeMatch = String(m.time || "").match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?|\d{1,2}:\d{2})/i);
     items.push({
@@ -179,7 +186,7 @@ export function buildDashboardAgenda({ meetingsUpcoming = [], tasks = {}, follow
     });
   }
 
-  const todayTasks = tasks[today] || [];
+  const todayTasks = taskMap[today] || [];
   for (const t of todayTasks) {
     if (t.status === "done" || t.status === "completed") continue;
     items.push({
@@ -191,7 +198,7 @@ export function buildDashboardAgenda({ meetingsUpcoming = [], tasks = {}, follow
     });
   }
 
-  for (const f of followUps) {
+  for (const f of pendingFollowUps) {
     if (f.done) continue;
     items.push({
       time: f.time || "—",

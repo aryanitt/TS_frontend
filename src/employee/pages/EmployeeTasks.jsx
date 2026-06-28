@@ -248,8 +248,15 @@ export default function EmployeeTasks() {
     deadline: "17:00",
   });
   const [checklistChecks, setChecklistChecks] = useState(() => {
-    const saved = localStorage.getItem("emp_daily_checklist_checks");
-    return saved ? JSON.parse(saved) : {};
+    if (typeof window === "undefined") return {};
+    try {
+      const saved = window.localStorage.getItem("emp_daily_checklist_checks");
+      if (!saved) return {};
+      const parsed = JSON.parse(saved);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
   });
 
   useEffect(() => {

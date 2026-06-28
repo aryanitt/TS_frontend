@@ -90,7 +90,7 @@ export function EmployeeProvider({ children }) {
   const [calls, setCalls] = useState([]);
   const [meetingsUpcoming, setMeetingsUpcoming] = useState([]);
   const [meetingsHistory, setMeetingsHistory] = useState([]);
-  const [activities, setActivities] = useState([]);
+  const [activities, setActivities] = useState({});
   const [sops, setSopsState] = useState([]);
   const [teamEmployees, setTeamEmployees] = useState([]);
 
@@ -694,12 +694,13 @@ export function EmployeeProvider({ children }) {
           cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
         });
         const employees = unwrapApiData(empRes);
-        const matched = employees.find((e) => e.name === CURRENT_EMPLOYEE.name) || employees[0];
+        const list = Array.isArray(employees) ? employees : [];
+        const matched = list.find((e) => e.name === CURRENT_EMPLOYEE.name) || list[0];
         if (matched && !cancelled) {
           const mapped = { ...CURRENT_EMPLOYEE, ...mapApiEmployee(matched) };
           setEmployee(mapped);
           storeEmployee(mapped);
-          setTeamEmployees(employees.map((e) => mapApiEmployee(e)));
+          setTeamEmployees(list.map((e) => mapApiEmployee(e)));
           setUsingApi(true);
 
           try {
