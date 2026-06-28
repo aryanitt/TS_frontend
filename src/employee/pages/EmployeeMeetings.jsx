@@ -330,7 +330,6 @@ export default function EmployeeMeetings() {
     refreshLeads,
     refreshMeetings,
     usingApi,
-    loading,
   } = useEmployee();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState("upcoming");
@@ -342,12 +341,6 @@ export default function EmployeeMeetings() {
   useEffect(() => {
     if (searchParams.get("action") === "add") setDrawerOpen(true);
   }, [searchParams]);
-
-  useEffect(() => {
-    if (loading) return;
-    refreshLeads();
-    refreshMeetings();
-  }, [loading, refreshLeads, refreshMeetings]);
 
   const selectedPlatform = MEETING_PLATFORMS.find((p) => p.id === form.platform) || MEETING_PLATFORMS[0];
 

@@ -6,6 +6,9 @@
 const CACHE_PREFIX = "crm_cache:";
 const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
 const memoryCache = new Map();
+const inflightGets = new Map();
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Hostinger backend — used when VITE_API_URL is missing from the Vercel build. */
 const PRODUCTION_API_BASE =
@@ -96,7 +99,13 @@ export function invalidateCache(match = "") {
 }
 
 async function performFetch(url, options = {}) {
-  const response = await fetch(url, {
+  const method = (options.method || "GET").toUpperCase();
+  if (method === "GET") {
+    const existing = inflightGets.get(url);
+    if (existing) return existing;
+  }
+
+  const request = fetch(url, {
     ...options,
     headers: {
       Accept: "application/json",
@@ -106,7 +115,15 @@ async function performFetch(url, options = {}) {
       ...options.headers,
     },
   });
-  return response;
+
+  if (method === "GET") {
+    inflightGets.set(url, request);
+    request.finally(() => {
+      if (inflightGets.get(url) === request) inflightGets.delete(url);
+    });
+  }
+
+  return request;
 }
 
 function storeGetCache(key, data, ttl) {
@@ -177,6 +194,7 @@ export async function apiJson(path, options = {}) {
     cacheTtl = DEFAULT_GET_TTL,
     skipCache = false,
     method = "GET",
+    _retry429 = false,
     ...fetchOptions
   } = options;
 
@@ -224,12 +242,32 @@ export async function apiJson(path, options = {}) {
 
   if (!parsed) {
     const preview = text.slice(0, 80);
+    if (response.status === 429 && !_retry429) {
+      await sleep(1500);
+      return apiJson(path, {
+        cacheTtl,
+        skipCache,
+        method,
+        _retry429: true,
+        ...fetchOptions,
+      });
+    }
     const err = new Error(describeNonJsonResponse(response.status, contentType, preview));
     err.status = response.status;
     throw err;
   }
 
   if (!response.ok) {
+    if (response.status === 429 && !_retry429) {
+      await sleep(1500);
+      return apiJson(path, {
+        cacheTtl,
+        skipCache,
+        method,
+        _retry429: true,
+        ...fetchOptions,
+      });
+    }
     const message = formatApiError(data, response.statusText || "Request failed");
     const err = new Error(message);
     err.status = response.status;

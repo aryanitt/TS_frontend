@@ -107,8 +107,7 @@ export function EmployeeProvider({ children }) {
     try {
       const res = await apiGet(`/api/v1/employee/${empId}/dashboard`, {
         headers: getCrmHeaders(),
-        skipCache: true,
-        cacheTtl: 0,
+        cacheTtl: 30_000,
       });
       const data = unwrapApiData(res) || res.data || res;
       if (Array.isArray(data.tasks)) {
@@ -125,36 +124,6 @@ export function EmployeeProvider({ children }) {
         setFollowUpsState(
           data.followups.map((f) => followUpFromApi(f, leadSource)),
         );
-      }
-      try {
-        const fuRes = await apiGet(`/api/v1/employee/${empId}/followups`, {
-          headers: getCrmHeaders(),
-          skipCache: true,
-          cacheTtl: 0,
-        });
-        const fuItems = unwrapApiData(fuRes);
-        if (Array.isArray(fuItems)) {
-          const leadSource = workspaceLeads.length ? workspaceLeads : leads;
-          setFollowUpsState(fuItems.map((f) => followUpFromApi(f, leadSource)));
-        }
-      } catch {
-        /* dashboard followups may already be set */
-      }
-      try {
-        const meetRes = await apiGet(`/api/v1/employee/${empId}/meetings`, {
-          headers: getCrmHeaders(),
-          skipCache: true,
-          cacheTtl: 0,
-        });
-        const meetItems = unwrapApiData(meetRes);
-        if (Array.isArray(meetItems)) {
-          const leadSource = workspaceLeads.length ? workspaceLeads : leads;
-          const split = partitionMeetings(meetItems, leadSource);
-          setMeetingsUpcoming(split.upcoming);
-          setMeetingsHistory(split.history);
-        }
-      } catch {
-        /* keep existing meetings list */
       }
       if (Array.isArray(data.calls)) {
         setCalls(data.calls.map((c) => callFromApi(c, workspaceLeads)));
@@ -192,11 +161,6 @@ export function EmployeeProvider({ children }) {
           setUsingApi(true);
 
           try {
-            await refreshLeads(mapped.id);
-          } catch {
-            /* leads may load on next refresh */
-          }
-          try {
             await loadEmployeeWorkspace(mapped.id, mapped);
           } catch {
             /* workspace partial load is ok */
@@ -230,9 +194,7 @@ export function EmployeeProvider({ children }) {
           setEmployee({ ...CURRENT_EMPLOYEE, ...stored });
           setUsingApi(shouldPersistToApi(false));
           try {
-            await refreshLeads(stored.id);
             await loadEmployeeWorkspace(stored.id, { ...CURRENT_EMPLOYEE, ...stored });
-            await refreshMeetings(stored.id);
           } catch {
             /* partial reload ok */
           }
@@ -243,7 +205,7 @@ export function EmployeeProvider({ children }) {
 
     bootstrap();
     return () => { cancelled = true; };
-  }, [refreshLeads, loadEmployeeWorkspace]);
+  }, [loadEmployeeWorkspace]);
 
   const refreshTasks = useCallback(async (empId = employee.id) => {
     try {
@@ -296,8 +258,7 @@ export function EmployeeProvider({ children }) {
       }
       const res = await apiGet(`/api/v1/employee/${resolvedId}/followups`, {
         headers: getCrmHeaders(),
-        skipCache: true,
-        cacheTtl: 0,
+        cacheTtl: 30_000,
       });
       const items = unwrapApiData(res);
       if (!Array.isArray(items)) return false;
@@ -772,8 +733,7 @@ export function EmployeeProvider({ children }) {
       }
       const res = await apiGet(`/api/v1/employee/${resolvedId}/meetings`, {
         headers: getCrmHeaders(),
-        skipCache: true,
-        cacheTtl: 0,
+        cacheTtl: 30_000,
       });
       const items = unwrapApiData(res);
       const split = partitionMeetings(items, leadList);
@@ -785,18 +745,6 @@ export function EmployeeProvider({ children }) {
       return false;
     }
   }, [employee, leads, resolveApiEmployeeId]);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!employee?.id) return;
-    refreshFollowUps(employee.id, leads);
-  }, [loading, employee?.id, refreshFollowUps, leads]);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!employee?.id) return;
-    refreshMeetings(employee.id, leads);
-  }, [loading, employee?.id, refreshMeetings, leads]);
 
   const createMeeting = useCallback(async (form) => {
     const lead = leads.find((l) => String(l.id) === String(form.leadId));
@@ -841,14 +789,13 @@ export function EmployeeProvider({ children }) {
       const mapped = meetingFromApi(saved, leads);
       setMeetingsUpcoming((prev) => [mapped, ...prev.filter((m) => m.id !== tempId)]);
       invalidateCache("/api/v1");
-      await refreshMeetings(employeeId, leads);
       return mapped;
     } catch (err) {
       setMeetingsUpcoming((prev) => prev.filter((m) => m.id !== tempId));
       toast.error(err.message || "Could not save meeting to server");
       return null;
     }
-  }, [employee, leads, usingApi, resolveApiEmployeeId, refreshMeetings]);
+  }, [employee, leads, usingApi, resolveApiEmployeeId]);
 
   const cancelMeeting = useCallback(async (meetingId) => {
     const previousUpcoming = meetingsUpcoming;
