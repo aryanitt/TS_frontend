@@ -60,6 +60,12 @@ export function unwrapApiList(res) {
   return null;
 }
 
+/** Replace list on fetch — used for per-employee workspace (no cross-user merge). */
+export function replaceFetchedList(_prev, next) {
+  if (!Array.isArray(next)) return [];
+  return next;
+}
+
 /** Keep existing rows when a refetch returns empty (avoids wiping good data on race/429). */
 export function mergeFetchedList(prev, next) {
   if (!Array.isArray(next)) return prev;
@@ -101,6 +107,8 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
     createdAt: lead.createdAt || lead.created_at,
     updatedAt: lead.updatedAt || lead.updated_at,
     assignmentStatus: lead.assignmentStatus || lead.assignment_status,
+    assignedAt: lead.assignedAt || lead.assigned_at,
+    acceptedAt: lead.acceptedAt || lead.accepted_at,
     _api: true,
   };
 }
@@ -141,6 +149,7 @@ export function employeeStagePatch(stageLabel, currentStatus) {
   const status = stageLabel === "Converted" ? "converted"
     : stageLabel === "Not Pick" ? "notpick"
     : stageLabel === "Closed" ? "ni"
+    : stageLabel === "New Lead" ? "new"
     : currentStatus;
   return {
     stage: stageLabel,

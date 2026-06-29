@@ -37,6 +37,9 @@ export function normalizeAuthUser(user) {
     ...user,
     mustChangePassword: Boolean(user.mustChangePassword),
     role: user.role || "employee",
+    employeeId: user.employeeId != null ? Number(user.employeeId) : null,
+    lastLoginAt: user.lastLoginAt || null,
+    createdAt: user.createdAt || null,
   };
 }
 
@@ -69,7 +72,16 @@ export function getStoredEmployee() {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(EMPLOYEE_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed) return null;
+
+    const authUser = getStoredAuthUser();
+    if (authUser?.role === "employee" && authUser.employeeId != null) {
+      if (Number(parsed.id) !== Number(authUser.employeeId)) {
+        return null;
+      }
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -82,6 +94,23 @@ export function storeEmployee(employee) {
   } catch {
     // ignore
   }
+}
+
+export function clearEmployeeStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function getAuthenticatedEmployeeId() {
+  const authUser = getStoredAuthUser();
+  if (authUser?.role === "employee" && authUser.employeeId != null) {
+    return Number(authUser.employeeId);
+  }
+  return null;
 }
 
 export function getCrmHeaders(role = "employee", employeeOverride = null) {
@@ -99,7 +128,9 @@ export function getCrmHeaders(role = "employee", employeeOverride = null) {
     };
   }
 
-  const employeeId = authUser?.employeeId || emp?.id || "";
+  const employeeId = authUser?.employeeId != null
+    ? Number(authUser.employeeId)
+    : (emp?.id != null ? Number(emp.id) : "");
   return {
     ...headers,
     "x-tenant-id": "default",
@@ -158,16 +189,7 @@ export function matchEmployeeFromList(employees, profile = {}, mockId = 101) {
   if (name) {
     const exact = employees.find((row) => normalizePersonKey(row.name) === name);
     if (exact) return exact;
-
-    const first = name.split(/\s+/)[0];
-    if (first) {
-      const byFirst = employees.find((row) => normalizePersonKey(row.name).split(/\s+/)[0] === first);
-      if (byFirst) return byFirst;
-
-      const partial = employees.find((row) => normalizePersonKey(row.name).includes(first));
-      if (partial) return partial;
-    }
   }
 
-  return employees[0] || null;
+  return null;
 }

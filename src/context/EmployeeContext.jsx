@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import { useAuth } from "./AuthContext.jsx";
 import {
   CURRENT_EMPLOYEE,
   MOCK_EMPLOYEE_ID,
@@ -32,6 +33,8 @@ import {
   storeEmployee,
   getStoredEmployee,
   getStoredAuthUser,
+  getAuthenticatedEmployeeId,
+  clearEmployeeStorage,
   isMockEmployeeId,
   matchEmployeeFromList,
 } from "../lib/crmContext.js";
@@ -42,6 +45,7 @@ import {
   unwrapApiData,
   unwrapApiList,
   mergeFetchedList,
+  replaceFetchedList,
 } from "../lib/leadSync.js";
 
 const EmployeeContext = createContext(null);
@@ -65,18 +69,21 @@ function readJsonStorage(key, fallback) {
   }
 }
 
+function profileFromAuthUser(authUser) {
+  if (!authUser || authUser.role !== "employee" || authUser.employeeId == null) return null;
+  return {
+    ...CURRENT_EMPLOYEE,
+    id: Number(authUser.employeeId),
+    name: authUser.name || CURRENT_EMPLOYEE.name,
+    email: authUser.email || CURRENT_EMPLOYEE.email,
+    role: authUser.employeeRole || CURRENT_EMPLOYEE.role,
+    department: authUser.department || CURRENT_EMPLOYEE.department,
+  };
+}
+
 function readBootstrappedEmployee() {
-  const authUser = getStoredAuthUser();
-  if (authUser?.role === "employee" && authUser.employeeId) {
-    return {
-      ...CURRENT_EMPLOYEE,
-      id: authUser.employeeId,
-      name: authUser.name || CURRENT_EMPLOYEE.name,
-      email: authUser.email || CURRENT_EMPLOYEE.email,
-      role: authUser.employeeRole || CURRENT_EMPLOYEE.role,
-      department: authUser.department || CURRENT_EMPLOYEE.department,
-    };
-  }
+  const authProfile = profileFromAuthUser(getStoredAuthUser());
+  if (authProfile) return authProfile;
 
   const stored = getStoredEmployee();
   if (stored?.id && !isMockEmployeeId(stored.id, MOCK_EMPLOYEE_ID)) {
@@ -93,8 +100,26 @@ function countTasks(map) {
   );
 }
 
+function listUpdaterForSession() {
+  return getAuthenticatedEmployeeId() ? replaceFetchedList : mergeFetchedList;
+}
+
+function filterLeadsForEmployee(leadList, employeeId) {
+  if (!employeeId || !Array.isArray(leadList)) return leadList || [];
+  return leadList.filter((l) => {
+    if (l.assigneeId == null) return true;
+    return Number(l.assigneeId) === Number(employeeId);
+  });
+}
+
 export function EmployeeProvider({ children }) {
-  const [employee, setEmployee] = useState(readBootstrappedEmployee);
+  const { user: authUser, loading: authLoading } = useAuth();
+  const [employee, setEmployee] = useState(() => {
+    const fromAuth = profileFromAuthUser(getStoredAuthUser());
+    if (fromAuth) return fromAuth;
+    return { ...CURRENT_EMPLOYEE, id: null, name: "Employee" };
+  });
+  const [linkError, setLinkError] = useState(null);
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [usingApi, setUsingApi] = useState(() => typeof window !== "undefined");
@@ -109,6 +134,9 @@ export function EmployeeProvider({ children }) {
   const [teamEmployees, setTeamEmployees] = useState([]);
 
   const resolveApiEmployeeId = useCallback(async (preferredId, preferredProfile) => {
+    const authEmployeeId = getAuthenticatedEmployeeId();
+    if (authEmployeeId) return authEmployeeId;
+
     const profile = typeof preferredProfile === "object" && preferredProfile
       ? preferredProfile
       : { id: preferredId, name: preferredProfile };
@@ -161,38 +189,47 @@ export function EmployeeProvider({ children }) {
         throw new Error(res.message || "Dashboard API failed");
       }
       const data = unwrapApiData(res) || res.data || res;
+      const authEmployeeId = getAuthenticatedEmployeeId();
       const workspaceLeads = Array.isArray(data.leads)
-        ? data.leads.map((l) => apiLeadToEmployee(l, AVATAR_COLORS))
+        ? filterLeadsForEmployee(
+          data.leads.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
+          authEmployeeId || resolvedId,
+        )
         : null;
 
+      const applyList = listUpdaterForSession();
+
       if (workspaceLeads) {
-        setLeads((prev) => mergeFetchedList(prev, workspaceLeads));
+        setLeads((prev) => applyList(prev, workspaceLeads));
       }
 
       if (Array.isArray(data.followups)) {
         setFollowUpsState((prev) => {
           const next = data.followups.map((f) => followUpFromApi(f, workspaceLeads || []));
-          return mergeFetchedList(prev, next);
+          return applyList(prev, next);
         });
       }
 
       if (Array.isArray(data.calls)) {
         setCalls((prev) => {
           const next = data.calls.map((c) => callFromApi(c, workspaceLeads || []));
-          return mergeFetchedList(prev, next);
+          return applyList(prev, next);
         });
       }
 
       if (Array.isArray(data.meetings)) {
         const split = partitionMeetings(data.meetings, workspaceLeads || []);
-        setMeetingsUpcoming((prev) => mergeFetchedList(prev, split.upcoming));
-        setMeetingsHistory((prev) => mergeFetchedList(prev, split.history));
+        setMeetingsUpcoming((prev) => applyList(prev, split.upcoming));
+        setMeetingsHistory((prev) => applyList(prev, split.history));
       }
 
       if (Array.isArray(data.tasks)) {
         setTasksState((prev) => {
           const next = tasksMapFromApi(data.tasks, empProfile);
-          return countTasks(next) === 0 && countTasks(prev) > 0 ? prev : next;
+          if (!authEmployeeId) {
+            return countTasks(next) === 0 && countTasks(prev) > 0 ? prev : next;
+          }
+          return next;
         });
       }
       if (Array.isArray(data.sops) && data.sops.length) {
@@ -204,6 +241,9 @@ export function EmployeeProvider({ children }) {
       }
       if (data.employee) {
         const mapped = { ...empProfile, ...mapApiEmployee(data.employee) };
+        if (getAuthenticatedEmployeeId() && Number(mapped.id) !== Number(getAuthenticatedEmployeeId())) {
+          return false;
+        }
         setEmployee(mapped);
         storeEmployee(mapped);
       }
@@ -226,10 +266,11 @@ export function EmployeeProvider({ children }) {
       });
       const items = unwrapApiList(res);
       if (!items) return false;
-      setLeads((prev) => mergeFetchedList(
-        prev,
+      const mapped = filterLeadsForEmployee(
         items.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
-      ));
+        getAuthenticatedEmployeeId() || resolvedId,
+      );
+      setLeads((prev) => listUpdaterForSession()(prev, mapped));
       setUsingApi(true);
       return true;
     } catch {
@@ -251,6 +292,7 @@ export function EmployeeProvider({ children }) {
       if (!items) return false;
       setTasksState((prev) => {
         const next = tasksMapFromApi(items, empProfile);
+        if (getAuthenticatedEmployeeId()) return next;
         return countTasks(next) === 0 && countTasks(prev) > 0 ? prev : next;
       });
       setUsingApi(true);
@@ -272,7 +314,7 @@ export function EmployeeProvider({ children }) {
       });
       const items = unwrapApiList(res);
       if (!items) return false;
-      setFollowUpsState((prev) => mergeFetchedList(
+      setFollowUpsState((prev) => listUpdaterForSession()(
         prev,
         items.map((f) => followUpFromApi(f, leadList)),
       ));
@@ -283,22 +325,10 @@ export function EmployeeProvider({ children }) {
     }
   }, [employee, leads, resolveApiEmployeeId]);
 
-  const resolveAssigneeId = useCallback(async (assigneeName) => {
-    const name = String(assigneeName || "").trim();
-    const self = employee?.name || "";
-    if (!name || !self || name === self || name.split(" ")[0] === self.split(" ")[0]) {
-      return resolveApiEmployeeId(employee.id, employee);
-    }
-    try {
-      const res = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
-      const match = res.employees?.find(
-        (e) => e.name === name || e.name?.split(" ")[0] === name.split(" ")[0],
-      );
-      if (match?.id) return match.id;
-    } catch {
-      // fall through
-    }
-    return resolveApiEmployeeId(employee.id, name);
+  const resolveAssigneeId = useCallback(async () => {
+    const authEmployeeId = getAuthenticatedEmployeeId();
+    if (authEmployeeId) return authEmployeeId;
+    return resolveApiEmployeeId(employee.id, employee);
   }, [employee, resolveApiEmployeeId]);
 
   const createTask = useCallback(async ({ date, task }) => {
@@ -314,7 +344,7 @@ export function EmployeeProvider({ children }) {
     if (!persist) return localTask;
 
     try {
-      const assigneeId = await resolveAssigneeId(task.assignee);
+      const assigneeId = await resolveAssigneeId();
       if (!assigneeId) {
         throw new Error("Could not resolve assignee for this task");
       }
@@ -747,7 +777,7 @@ export function EmployeeProvider({ children }) {
 
         await apiPost("/api/v1/assignment/assign", {
           leadId: res.data?.id ?? res.id,
-          employeeId: employee.id,
+          employeeId: await resolveApiEmployeeId(employee.id, employee),
           method: "manual",
         }, { headers: getCrmHeaders() });
 
@@ -764,15 +794,24 @@ export function EmployeeProvider({ children }) {
     localLead.assigneeId = employee.id;
     setLeads((prev) => [localLead, ...prev]);
     return localLead;
-  }, [employee, refreshLeads, usingApi]);
+  }, [employee, refreshLeads, usingApi, resolveApiEmployeeId]);
 
-  const updateLeadStage = useCallback(async (leadId, stageLabel) => {
+  const updateLeadStage = useCallback(async (leadId, stageLabel, options = {}) => {
+    const { fromNewAssigned = false } = options;
     const current = leads.find((l) => l.id === leadId);
     const patch = employeeStagePatch(stageLabel, current?.status);
+    const acceptedAt = fromNewAssigned ? new Date().toISOString() : current?.acceptedAt;
 
     setLeads((prev) => prev.map((l) => {
       if (l.id !== leadId) return l;
-      return { ...l, stage: stageLabel, status: patch.employeeStatus };
+      return {
+        ...l,
+        stage: stageLabel,
+        status: patch.employeeStatus,
+        pipelineStage: stageLabel,
+        assignmentStatus: fromNewAssigned ? "accepted" : l.assignmentStatus,
+        acceptedAt,
+      };
     }));
 
     if (shouldPersistToApi(usingApi)) {
@@ -858,8 +897,8 @@ export function EmployeeProvider({ children }) {
       const items = unwrapApiList(res);
       if (!items) return false;
       const split = partitionMeetings(items, leadList);
-      setMeetingsUpcoming((prev) => mergeFetchedList(prev, split.upcoming));
-      setMeetingsHistory((prev) => mergeFetchedList(prev, split.history));
+      setMeetingsUpcoming((prev) => listUpdaterForSession()(prev, split.upcoming));
+      setMeetingsHistory((prev) => listUpdaterForSession()(prev, split.history));
       setUsingApi(true);
       return true;
     } catch {
@@ -870,9 +909,86 @@ export function EmployeeProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
 
+    async function hydrateWorkspace(profile, forceRefresh = true) {
+      setEmployee(profile);
+      storeEmployee(profile);
+      setUsingApi(true);
+
+      const loaded = await loadEmployeeWorkspace(profile.id, profile, { forceRefresh });
+      if (cancelled) return;
+      if (!loaded) {
+        await refreshLeads(profile.id, profile);
+      }
+      if (cancelled) return;
+      await refreshTasks(profile.id, profile);
+      try {
+        await refreshSops();
+      } catch {
+        /* SOPs optional */
+      }
+    }
+
     async function bootstrap() {
       setLoading(true);
+      setLinkError(null);
       try {
+        if (authLoading) return;
+
+        const authProfile = profileFromAuthUser(authUser);
+
+        if (authUser?.role === "employee" && !authProfile) {
+          setLinkError("Your login is not linked to an employee profile. Ask admin to reset your credentials from Team Management.");
+          setLeads([]);
+          setTasksState({});
+          setFollowUpsState([]);
+          setCalls([]);
+          setMeetingsUpcoming([]);
+          setMeetingsHistory([]);
+          return;
+        }
+
+        if (authProfile) {
+          const stored = getStoredEmployee();
+          if (stored?.id && Number(stored.id) !== Number(authProfile.id)) {
+            clearEmployeeStorage();
+          }
+
+          setLeads([]);
+          setTasksState({});
+          setFollowUpsState([]);
+          setCalls([]);
+          setMeetingsUpcoming([]);
+          setMeetingsHistory([]);
+          setActivities({});
+          invalidateCache("/api/v1/employee/");
+
+          await hydrateWorkspace(authProfile, true);
+          if (cancelled) return;
+
+          try {
+            const empRes = await apiGet("/api/v1/employees", {
+              headers: getCrmHeaders("employee", authProfile),
+              cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
+              skipCache: true,
+            });
+            if (!cancelled && empRes?.success !== false) {
+              const employees = unwrapApiData(empRes);
+              const list = Array.isArray(employees) ? employees : [];
+              if (list.length) {
+                setTeamEmployees(list.map((e) => mapApiEmployee(e)));
+              }
+            }
+          } catch {
+            /* team list is optional for reassign dropdown */
+          }
+          return;
+        }
+
+        if (authUser?.role === "employee") {
+          setLinkError("Could not load your employee profile. Sign out and sign in again.");
+          return;
+        }
+
         const stored = getStoredEmployee();
         const seedProfile = stored?.id && !isMockEmployeeId(stored.id, MOCK_EMPLOYEE_ID)
           ? { ...CURRENT_EMPLOYEE, ...stored }
@@ -896,22 +1012,7 @@ export function EmployeeProvider({ children }) {
           const matched = matchEmployeeFromList(list, seedProfile, MOCK_EMPLOYEE_ID);
           if (matched && !cancelled) {
             const mapped = { ...CURRENT_EMPLOYEE, ...mapApiEmployee(matched) };
-            setEmployee(mapped);
-            storeEmployee(mapped);
-            setUsingApi(true);
-
-            const loaded = await loadEmployeeWorkspace(mapped.id, mapped, { forceRefresh: true });
-            if (cancelled) return;
-            if (!loaded) {
-              await refreshLeads(mapped.id, mapped);
-            }
-            if (cancelled) return;
-            await refreshTasks(mapped.id, mapped);
-            try {
-              await refreshSops();
-            } catch {
-              /* SOPs optional */
-            }
+            await hydrateWorkspace(mapped, true);
             return;
           }
         } catch {
@@ -929,20 +1030,9 @@ export function EmployeeProvider({ children }) {
           ));
           setUsingApi(true);
           try {
-            const loaded = await loadEmployeeWorkspace(fallbackProfile.id, fallbackProfile, { forceRefresh: true });
-            if (cancelled) return;
-            if (!loaded) {
-              await refreshLeads(fallbackProfile.id, fallbackProfile);
-            }
-            if (cancelled) return;
-            await refreshTasks(fallbackProfile.id, fallbackProfile);
+            await hydrateWorkspace(fallbackProfile, true);
           } catch {
             /* show empty workspace until API recovers */
-          }
-          try {
-            await refreshSops();
-          } catch {
-            /* SOPs optional */
           }
         }
       } finally {
@@ -952,9 +1042,24 @@ export function EmployeeProvider({ children }) {
 
     bootstrap();
     return () => { cancelled = true; };
-    // Bootstrap once per page load; workspace loaders are stable enough for initial hydration.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authUser?.id, authUser?.employeeId, authUser?.role, authLoading]);
+
+  useEffect(() => {
+    const employeeId = getAuthenticatedEmployeeId();
+    if (!employeeId || linkError) return undefined;
+
+    const syncAssignedWork = () => {
+      if (document.visibilityState !== "visible") return;
+      invalidateCache("/api/v1/employee/");
+      refreshLeads(employeeId, employee);
+      refreshTasks(employeeId, employee);
+      refreshMeetings(employeeId, leads);
+      refreshFollowUps(employeeId, leads);
+    };
+
+    document.addEventListener("visibilitychange", syncAssignedWork);
+    return () => document.removeEventListener("visibilitychange", syncAssignedWork);
+  }, [employee, leads, linkError, refreshLeads, refreshTasks, refreshMeetings, refreshFollowUps]);
 
   const createMeeting = useCallback(async (form) => {
     const lead = leads.find((l) => String(l.id) === String(form.leadId));
@@ -1062,17 +1167,23 @@ export function EmployeeProvider({ children }) {
     cancelMeeting,
     refreshMeetings,
     loading,
+    linkError,
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
     syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, refreshLeads,
     reassignLead, teamEmployees, refreshTeamEmployees,
     usingApi, calls, addCallRecord, activities, addActivityRecord, sops, refreshSops,
-    meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading,
+    meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
   ]);
 
   return (
     <EmployeeContext.Provider value={value}>
+      {linkError && (
+        <div className="mx-3 sm:mx-4 md:mx-6 lg:mx-8 mt-3 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-sm">
+          {linkError}
+        </div>
+      )}
       {children}
     </EmployeeContext.Provider>
   );

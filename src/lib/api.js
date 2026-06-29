@@ -260,12 +260,13 @@ export async function apiJson(path, options = {}) {
 
   if (!parsed) {
     const preview = text.slice(0, 80);
-    if (response.status === 429 && _retry429 < 3) {
-      await sleep(1000 * (2 ** _retry429));
+    if (isGet && response.status === 429 && _retry429 < 2) {
+      await sleep(2000 * (_retry429 + 1));
       return apiJson(path, {
         cacheTtl,
         skipCache,
         method,
+        timeoutMs,
         _retry429: _retry429 + 1,
         ...fetchOptions,
       });
@@ -276,12 +277,13 @@ export async function apiJson(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (response.status === 429 && _retry429 < 3) {
-      await sleep(1000 * (2 ** _retry429));
+    if (isGet && response.status === 429 && _retry429 < 2) {
+      await sleep(2000 * (_retry429 + 1));
       return apiJson(path, {
         cacheTtl,
         skipCache,
         method,
+        timeoutMs,
         _retry429: _retry429 + 1,
         ...fetchOptions,
       });

@@ -72,12 +72,17 @@ export const EMP_LEADS = [
 export function buildPipelineChartFromLeads(leads = []) {
   const counts = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, 0]));
   for (const lead of leads) {
-    const raw = String(lead.stage || lead.pipelineStage || "attempted").toLowerCase();
-    const stageId = EMP_KANBAN_STAGES.find((s) => s.id === raw.replace(/\s+/g, "_"))
-      || EMP_KANBAN_STAGES.find((s) => s.label.toLowerCase() === raw)
-      || EMP_KANBAN_STAGES.find((s) => raw.includes(s.label.toLowerCase()))
-      || EMP_KANBAN_STAGES[1];
-    counts[stageId.id] = (counts[stageId.id] || 0) + 1;
+    const stageId = isEmployeeNewAssignedLead(lead)
+      ? "new_lead"
+      : (() => {
+        const raw = String(lead.stage || lead.pipelineStage || "attempted").toLowerCase();
+        const found = EMP_KANBAN_STAGES.find((s) => s.id === raw.replace(/\s+/g, "_"))
+          || EMP_KANBAN_STAGES.find((s) => s.label.toLowerCase() === raw)
+          || EMP_KANBAN_STAGES.find((s) => raw.includes(s.label.toLowerCase()))
+          || EMP_KANBAN_STAGES[2];
+        return found.id;
+      })();
+    counts[stageId] = (counts[stageId] || 0) + 1;
   }
   const max = Math.max(1, ...Object.values(counts));
   return EMP_KANBAN_STAGES.map((s) => ({
@@ -530,6 +535,7 @@ export const EMP_TEAM_CALL = [
 ];
 
 export const EMP_KANBAN_STAGES = [
+  { id: "new_lead", label: "New Lead", color: "#e11d48", badgeTone: "primary" },
   { id: "not_pick", label: "Not Pick", color: "#94a3b8", badgeTone: "muted" },
   { id: "attempted", label: "Attempted", color: "#3b82f6", badgeTone: "info" },
   { id: "contacted", label: "Contacted", color: "#7c3aed", badgeTone: "primary" },
@@ -608,8 +614,18 @@ export function empLeadFromDrawerPayload(raw, avatarColors) {
   };
 }
 
+export function isEmployeeNewAssignedLead(lead) {
+  if (!lead) return false;
+  if (lead.acceptedAt || lead.accepted_at) return false;
+  const assignStatus = String(lead.assignmentStatus || lead.assignment_status || "").toLowerCase();
+  if (assignStatus === "assigned") return true;
+  const stage = String(lead.stage || lead.pipelineStage || lead.pipeline_stage || "").toLowerCase();
+  return (stage === "new lead" || stage === "new") && assignStatus !== "accepted" && assignStatus !== "in_progress";
+}
+
 export function mapEmpLeadKanbanStage(stage, status) {
   const s = (stage || "").toLowerCase();
+  if (s === "new lead" || s === "new") return "new_lead";
   if (status === "notpick" || s.includes("not pick")) return "not_pick";
   if (status === "converted" || s.includes("converted")) return "converted";
   if (s.includes("negotiation")) return "negotiation";
@@ -623,7 +639,7 @@ export function mapEmpLeadKanbanStage(stage, status) {
 export function groupEmpLeadsKanban(leads) {
   const map = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, []]));
   leads.forEach((l) => {
-    const id = mapEmpLeadKanbanStage(l.stage, l.status);
+    const id = isEmployeeNewAssignedLead(l) ? "new_lead" : mapEmpLeadKanbanStage(l.stage, l.status);
     if (map[id]) map[id].push(l);
   });
   return map;

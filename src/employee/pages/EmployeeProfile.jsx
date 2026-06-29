@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeftRight,
   Bell,
   Briefcase,
   Calendar,
+  LogOut,
+  Lock,
   Mail,
   MapPin,
   Phone,
@@ -16,11 +17,11 @@ import {
 } from "lucide-react";
 import useIsMobile from "../../lib/useIsMobile.js";
 import { Badge } from "../../components/Primitives.jsx";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { filterCallsForPeriod } from "../../data/employeeMock.js";
 import {
   BtnPrimary,
-  BtnSecondary,
   FormGroup,
   FormInput,
   FormLabel,
@@ -68,6 +69,8 @@ function InfoRow({ icon: Icon, label, value }) {
 
 export default function EmployeeProfile() {
   const { employee, leads, calls, followUps, loading } = useEmployee();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [displayName, setDisplayName] = useState(employee.name);
   const [reminderHrs, setReminderHrs] = useState(24);
@@ -230,12 +233,22 @@ export default function EmployeeProfile() {
             <BtnPrimary className="w-full sm:flex-1 justify-center" onClick={handleSave}>
               Save preferences
             </BtnPrimary>
-            <Link to="/" className="w-full sm:flex-1">
-              <BtnSecondary className="w-full justify-center">
-                <ArrowLeftRight className="w-4 h-4" />
-                Switch to admin panel
-              </BtnSecondary>
-            </Link>
+            <button
+              type="button"
+              className="w-full sm:flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+              onClick={() => navigate("/change-password")}
+            >
+              <Lock className="w-4 h-4" />
+              Change password
+            </button>
+            <button
+              type="button"
+              className="w-full sm:flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 text-rose-700 text-sm font-semibold hover:bg-rose-50"
+              onClick={() => { logout(); navigate("/login", { replace: true }); }}
+            >
+              <LogOut className="w-4 h-4" />
+              Sign out
+            </button>
           </div>
         </article>
       </div>

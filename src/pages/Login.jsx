@@ -1,16 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Lock, User, Eye, EyeOff } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.jsx";
-import { apiGet } from "../lib/api.js";
 import TSPublicationDoodleLogo from "../components/TSPublicationDoodleLogo.jsx";
 
-function resolvePostLoginPath(authUser, redirect = "") {
+function resolvePostLoginPath(authUser) {
   if (Boolean(authUser?.mustChangePassword)) return "/change-password";
   if (authUser?.role === "employee") return "/employee";
-  if (redirect && redirect.startsWith("/") && !redirect.startsWith("/employee") && redirect !== "/login") {
-    return redirect;
-  }
   return "/";
 }
 
@@ -20,27 +16,11 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [backendReady, setBackendReady] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const status = await apiGet("/api/auth/seed-status", {
-          skipCache: true,
-          cacheTtl: 0,
-          timeoutMs: 12000,
-        });
-        if (!cancelled) setBackendReady(Boolean(status?.success));
-      } catch {
-        if (!cancelled) setBackendReady(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (busy) return;
+
     if (!loginId.trim() || !password) {
       toast.error("Enter your login ID and password");
       return;
@@ -55,11 +35,11 @@ export default function Login() {
     } catch (err) {
       setBusy(false);
       const msg = err?.message || "Invalid login ID or password";
-      if (backendReady === false || msg.includes("404") || msg.includes("not found")) {
-        toast.error("Backend auth is not deployed yet. Pull latest code on Hostinger, run npm install && npm run seed:admin, then restart.");
-      } else {
-        toast.error(msg);
+      if (err?.status === 429 || msg.includes("Too many API")) {
+        toast.error("Too many attempts — wait 30 seconds, then try once.");
+        return;
       }
+      toast.error(msg);
     }
   };
 
@@ -81,13 +61,6 @@ export default function Login() {
           </div>
           <h1 className="text-2xl font-bold text-slate-900">TS Publication CRM</h1>
           <p className="text-sm text-slate-500 mt-1">Sign in with your login ID or email</p>
-          {backendReady === false && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 text-left">
-              Backend auth is not live on Hostinger yet. In hPanel: pull latest code, run{" "}
-              <span className="font-mono">npm install</span> and{" "}
-              <span className="font-mono">npm run seed:admin</span>, then restart the app.
-            </p>
-          )}
         </div>
 
         <form

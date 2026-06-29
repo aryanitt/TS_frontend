@@ -2,14 +2,30 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { apiGet, apiPost, invalidateCache } from "../lib/api.js";
 import {
   clearAuthStorage,
+  clearEmployeeStorage,
   getAuthToken,
   getStoredAuthUser,
   normalizeAuthUser,
   storeAuthToken,
   storeAuthUser,
+  storeEmployee,
 } from "../lib/crmContext.js";
 
 const AuthContext = createContext(null);
+
+function syncEmployeeProfileFromAuth(user) {
+  if (user?.role === "employee" && user.employeeId) {
+    storeEmployee({
+      id: user.employeeId,
+      name: user.name || "Employee",
+      email: user.email || "",
+      role: user.employeeRole || "Sales Executive",
+      department: user.department || "Sales",
+    });
+    return;
+  }
+  clearEmployeeStorage();
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => getStoredAuthUser());
@@ -18,6 +34,7 @@ export function AuthProvider({ children }) {
   const bootstrap = useCallback(async () => {
     const token = getAuthToken();
     const storedUser = getStoredAuthUser();
+    const onLoginPage = typeof window !== "undefined" && window.location.pathname === "/login";
 
     if (!token) {
       setUser(null);
@@ -27,6 +44,13 @@ export function AuthProvider({ children }) {
 
     if (storedUser) {
       setUser(storedUser);
+      syncEmployeeProfileFromAuth(storedUser);
+    }
+
+    // On the login screen, skip /me until after sign-in to avoid extra API calls.
+    if (onLoginPage) {
+      setLoading(false);
+      return;
     }
 
     try {
@@ -35,6 +59,7 @@ export function AuthProvider({ children }) {
         const nextUser = normalizeAuthUser(data.user);
         setUser(nextUser);
         storeAuthUser(nextUser);
+        syncEmployeeProfileFromAuth(nextUser);
       }
     } catch {
       // Keep the stored session — /me can fail briefly during deploy or cold start.
@@ -54,6 +79,8 @@ export function AuthProvider({ children }) {
   }, [bootstrap]);
 
   const login = useCallback(async (loginId, password) => {
+    clearEmployeeStorage();
+    invalidateCache();
     const data = await apiPost("/api/auth/login", { loginId, password });
     if (!data?.token || !data?.user) {
       throw new Error(data?.message || "Login failed");
@@ -61,6 +88,7 @@ export function AuthProvider({ children }) {
     const nextUser = normalizeAuthUser(data.user);
     storeAuthToken(data.token);
     storeAuthUser(nextUser);
+    syncEmployeeProfileFromAuth(nextUser);
     setUser(nextUser);
     setLoading(false);
     invalidateCache();
@@ -69,6 +97,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     clearAuthStorage();
+    clearEmployeeStorage();
     setUser(null);
     invalidateCache();
   }, []);
@@ -82,6 +111,7 @@ export function AuthProvider({ children }) {
       const nextUser = normalizeAuthUser(data.user);
       setUser(nextUser);
       storeAuthUser(nextUser);
+      syncEmployeeProfileFromAuth(nextUser);
     }
     return data;
   }, []);
