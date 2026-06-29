@@ -9,6 +9,26 @@ import AdminProfileHeader, { DashboardScrollbarStyles } from "../components/Admi
 import { SettingsSidebar, SettingsMobileTabs, SettingsPanel, PanelFooter } from "../components/SettingsLayout.jsx";
 import { apiGet, apiPut } from "../lib/api.js";
 
+function mapEmployeeToTarget(emp, savedTargets) {
+  const saved = Array.isArray(savedTargets)
+    ? savedTargets.find((row) => Number(row.id) === Number(emp.id))
+    : null;
+  return {
+    id: emp.id,
+    name: emp.name,
+    team: emp.department || emp.role || "General",
+    calls: Number(saved?.calls ?? emp.call_target ?? 0),
+    leads: Number(saved?.leads ?? emp.qualified_lead_target ?? 0),
+    meetings: Number(saved?.meetings ?? emp.meeting_target ?? 0),
+    revenue: Number(saved?.revenue ?? emp.cash_target ?? 0),
+  };
+}
+
+function mergeEmployeeTargets(employees, savedTargets) {
+  if (!Array.isArray(employees) || !employees.length) return [];
+  return employees.map((emp) => mapEmployeeToTarget(emp, savedTargets));
+}
+
 // ─── TABS DEFINITION ──────────────────────────────────────────────────────────
 const tabs = [
   { id: "targets",       label: "Target Management",    icon: Target },
@@ -23,17 +43,11 @@ export default function Settings() {
   const [currentVersion, setCurrentVersion] = useState("v2.3");
 
   // ─── 1. Target Management State ───
-  const [employeeTargets, setEmployeeTargets] = useState([
-    { id: 1, name: "Sarah Chen", team: "Sales & Growth", calls: 450, leads: 45, meetings: 35, revenue: 145000 },
-    { id: 2, name: "James Wilson", team: "Enterprise Sales", calls: 390, leads: 39, meetings: 30, revenue: 118000 },
-    { id: 3, name: "Emily Davis", team: "Sales & Growth", calls: 540, leads: 54, meetings: 40, revenue: 240000 },
-    { id: 4, name: "Lisa Park", team: "Inbound Growth", calls: 312, leads: 31, meetings: 25, revenue: 72000 },
-    { id: 5, name: "Marcus Brody", team: "Enterprise Sales", calls: 490, leads: 49, meetings: 38, revenue: 195000 },
-    { id: 6, name: "Siddharth Mehta", team: "Sales & Growth", calls: 416, leads: 41, meetings: 30, revenue: 132000 },
-  ]);
+  const [employeeTargets, setEmployeeTargets] = useState([]);
+  const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetSearch, setTargetSearch] = useState("");
-  const [selectedTargetEmp, setSelectedTargetEmp] = useState(1);
-  const [bulkTeam, setBulkTeam] = useState("Sales & Growth");
+  const [selectedTargetEmp, setSelectedTargetEmp] = useState(null);
+  const [bulkTeam, setBulkTeam] = useState("");
   const [bulkValue, setBulkValue] = useState("");
   const [bulkField, setBulkField] = useState("calls");
 
@@ -71,18 +85,32 @@ export default function Settings() {
 
   useEffect(() => {
     (async () => {
+      setTargetsLoading(true);
       try {
-        const data = await apiGet("/api/settings", { skipCache: true, cacheTtl: 0 });
-        if (data.employeeTargets?.length) setEmployeeTargets(data.employeeTargets);
-        if (data.kpiWeights?.length) setKpiWeights(data.kpiWeights);
-        if (data.incentiveSlabs?.length) setIncentiveSlabs(data.incentiveSlabs);
-        if (data.baseIncentiveRate != null) setBaseIncentiveRate(data.baseIncentiveRate);
-        if (data.targetBonusAmount != null) setTargetBonusAmount(data.targetBonusAmount);
-        if (data.formulaType) setFormulaType(data.formulaType);
-        if (data.ratingThresholds) setRatingThresholds(data.ratingThresholds);
-        if (data.currentVersion) setCurrentVersion(data.currentVersion);
+        const [teamRes, settingsRes] = await Promise.all([
+          apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 }),
+          apiGet("/api/settings", { skipCache: true, cacheTtl: 0 }).catch(() => ({})),
+        ]);
+
+        const employees = teamRes?.success && Array.isArray(teamRes.employees) ? teamRes.employees : [];
+        const mergedTargets = mergeEmployeeTargets(employees, settingsRes?.employeeTargets);
+        setEmployeeTargets(mergedTargets);
+        if (mergedTargets.length) {
+          setSelectedTargetEmp(mergedTargets[0].id);
+          setBulkTeam(mergedTargets[0].team);
+        }
+
+        if (settingsRes?.kpiWeights?.length) setKpiWeights(settingsRes.kpiWeights);
+        if (settingsRes?.incentiveSlabs?.length) setIncentiveSlabs(settingsRes.incentiveSlabs);
+        if (settingsRes?.baseIncentiveRate != null) setBaseIncentiveRate(settingsRes.baseIncentiveRate);
+        if (settingsRes?.targetBonusAmount != null) setTargetBonusAmount(settingsRes.targetBonusAmount);
+        if (settingsRes?.formulaType) setFormulaType(settingsRes.formulaType);
+        if (settingsRes?.ratingThresholds) setRatingThresholds(settingsRes.ratingThresholds);
+        if (settingsRes?.currentVersion) setCurrentVersion(settingsRes.currentVersion);
       } catch {
-        // keep local defaults (mock fallback)
+        setEmployeeTargets([]);
+      } finally {
+        setTargetsLoading(false);
       }
     })();
   }, []);
@@ -96,8 +124,14 @@ export default function Settings() {
 
   // ─── Selected Target Employee computed details ───
   const activeTargetEmp = useMemo(() => {
-    return employeeTargets.find(e => e.id === Number(selectedTargetEmp)) || employeeTargets[0];
+    if (!employeeTargets.length) return null;
+    return employeeTargets.find((e) => e.id === Number(selectedTargetEmp)) || employeeTargets[0];
   }, [employeeTargets, selectedTargetEmp]);
+
+  const bulkTeams = useMemo(() => {
+    const teams = [...new Set(employeeTargets.map((e) => e.team).filter(Boolean))];
+    return teams.length ? teams : ["General"];
+  }, [employeeTargets]);
 
   // ─── Handlers ───
   const handleSaveDraft = () => {
@@ -156,7 +190,7 @@ export default function Settings() {
 
   // Add target handler
   const handleTargetChange = (field, value) => {
-    if (value === "" || isNaN(Number(value))) return;
+    if (!activeTargetEmp || value === "" || isNaN(Number(value))) return;
     setEmployeeTargets(prev =>
       prev.map(e => (e.id === activeTargetEmp.id ? { ...e, [field]: Number(value) } : e))
     );
@@ -278,12 +312,18 @@ export default function Settings() {
                       </div>
 
                       <div className="space-y-1 overflow-y-auto max-h-48 pr-1 no-sb">
-                        {filteredTargets.map(e => (
+                        {targetsLoading && (
+                          <p className="text-xs text-slate-400 py-4 text-center">Loading employees…</p>
+                        )}
+                        {!targetsLoading && filteredTargets.length === 0 && (
+                          <p className="text-xs text-slate-400 py-4 text-center">No employees found. Add team members on the Team page.</p>
+                        )}
+                        {!targetsLoading && filteredTargets.map(e => (
                           <div
                             key={e.id}
                             onClick={() => setSelectedTargetEmp(e.id)}
                             className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition flex justify-between items-center ${
-                              activeTargetEmp.id === e.id
+                              activeTargetEmp?.id === e.id
                                 ? "bg-rose-50 border border-rose-200 text-rose-700"
                                 : "hover:bg-slate-100 text-slate-600 border border-transparent"
                             }`}
@@ -297,6 +337,10 @@ export default function Settings() {
 
                     {/* Employee Target Form */}
                     <div className="md:col-span-2 p-4 border border-rose-100/50 rounded-2xl bg-white space-y-4">
+                      {!activeTargetEmp ? (
+                        <p className="text-xs text-slate-400 py-8 text-center">Select an employee to edit targets.</p>
+                      ) : (
+                      <>
                       <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                         <span className="text-xs font-black text-[#be123c] uppercase">{activeTargetEmp.name}'s Target slate</span>
                         <Badge tone="primary">{activeTargetEmp.team}</Badge>
@@ -340,6 +384,8 @@ export default function Settings() {
                           />
                         </div>
                       </div>
+                      </>
+                      )}
                     </div>
 
                   </div>
@@ -359,9 +405,9 @@ export default function Settings() {
                           onChange={(e) => setBulkTeam(e.target.value)}
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-700 text-xs outline-none"
                         >
-                          <option>Sales & Growth</option>
-                          <option>Enterprise Sales</option>
-                          <option>Inbound Growth</option>
+                          {bulkTeams.map((team) => (
+                            <option key={team} value={team}>{team}</option>
+                          ))}
                         </select>
                       </div>
                       <div>

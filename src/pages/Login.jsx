@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Lock, User, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import { Lock, User, Eye, EyeOff, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.jsx";
 import TSPublicationDoodleLogo from "../components/TSPublicationDoodleLogo.jsx";
@@ -128,7 +128,7 @@ export default function Login() {
           autoComplete="username"
           value={loginId}
           onChange={(e) => setLoginId(e.target.value)}
-          placeholder="ADMIN or name@company.com"
+          placeholder="Your login ID or email"
         />
 
         <Field
@@ -166,22 +166,6 @@ export default function Login() {
             "Sign in"
           )}
         </button>
-
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-          <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-slate-300">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            First-time admin access
-          </div>
-          <p className="text-xs leading-relaxed text-slate-500">
-            Default credentials:{" "}
-            <span className="font-mono text-slate-400">ADMIN</span>
-            {" / "}
-            <span className="font-mono text-slate-400">Admin@12345</span>
-          </p>
-          <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
-            You will be asked to set a new password on first login.
-          </p>
-        </div>
       </form>
 
       <p className="mt-6 text-center text-[11px] text-slate-600">
