@@ -265,6 +265,17 @@ import {
   RadialBar,
 } from "recharts";
 import { GlassCard, Badge, StatCard, SectionHeader, Avatar } from "../components/Primitives.jsx";
+import { buildPipelineChartFromLeads } from "../data/employeeMock.js";
+
+function mapTeamLeadForChart(row) {
+  return {
+    stage: row.pipeline_stage || row.status,
+    pipelineStage: row.pipeline_stage,
+    status: row.status,
+    assignmentStatus: row.assignment_status,
+    acceptedAt: row.accepted_at,
+  };
+}
 
 // ─── colour tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -337,6 +348,7 @@ function useEmployeeLeads(emp) {
   const [stats,        setStats]        = useState(null);
   const [activity,     setActivity]     = useState([]);
   const [funnel,       setFunnel]       = useState([]);
+  const [stageBreakdown, setStageBreakdown] = useState([]);
   const [loading,      setLoading]      = useState(false);
   const [lastRefreshed,setLastRefreshed]= useState(null);
 
@@ -358,6 +370,7 @@ function useEmployeeLeads(emp) {
           setStats(data.stats    || null);
           setActivity(data.activity || []);
           setFunnel(data.funnel  || []);
+          setStageBreakdown(data.stageBreakdown || []);
           setLastRefreshed(new Date());
         }
       })
@@ -367,7 +380,7 @@ function useEmployeeLeads(emp) {
 
   useEffect(() => {
     if (!emp?.id && !emp?.name) return;
-    setLeads([]); setStats(null); setActivity([]); setFunnel([]);
+    setLeads([]); setStats(null); setActivity([]); setFunnel([]); setStageBreakdown([]);
     fetchLeads(true);
   }, [emp?.id, fetchLeads]);
 
@@ -378,7 +391,7 @@ function useEmployeeLeads(emp) {
   }, [emp?.id, emp?.name, fetchLeads]);
 
   return { 
-    leads, stats, activity, funnel,
+    leads, stats, activity, funnel, stageBreakdown,
     loading, refresh: () => fetchLeads(true), lastRefreshed 
   };
 }
@@ -2036,7 +2049,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  const { leads, stats, activity, funnel, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
+  const { leads, stats, activity, funnel, stageBreakdown, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
 
   // KRA & Remuneration Calculator States
   const [baseSalary, setBaseSalary] = useState(12000);
@@ -2167,6 +2180,22 @@ function EmpDetail({ emp, onEdit, onDelete }) {
         opacity: Math.max(0.45, 1 - idx * 0.12),
       }))
     : [];
+
+  const pipelineStages = useMemo(() => {
+    if (stageBreakdown?.length) {
+      return stageBreakdown.map((s, i) => ({
+        label: s.label,
+        count: s.count,
+        pct: s.pct,
+        color: ["#e11d48", "#94a3b8", "#3b82f6", "#7c3aed", "#0ea5e9", "#f59e0b", "#f97316", "#10b981"][i] || "#64748b",
+      }));
+    }
+    return buildPipelineChartFromLeads(leads.map(mapTeamLeadForChart));
+  }, [stageBreakdown, leads]);
+
+  const pipelineTotal = pipelineStages.reduce((sum, s) => sum + (s.count || 0), 0);
+  const convertedCount = pipelineStages.find((s) => s.label === "Converted")?.count || converted;
+  const convRate = pipelineTotal ? `${Math.round((convertedCount / pipelineTotal) * 100)}%` : "0%";
 
   const leadsList = leads.map((l) => ({
     name: l.lead_name || "Unknown",
@@ -2729,6 +2758,42 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                 );
               })}
             </div>
+          </div>
+        </div>
+
+        {/* Stage-wise breakdown — matches employee dashboard */}
+        <div style={{
+          background: "#fff",
+          border: "1px solid #ffe4e6",
+          borderRadius: compact ? 10 : 16,
+          padding: compact ? "8px 10px" : "14px 18px",
+          minWidth: 0,
+        }}>
+          <h3 style={{ fontSize: compact ? 9 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 6px" }}>
+            Stage-wise Breakdown
+          </h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: compact ? 4 : 8, marginBottom: compact ? 6 : 10 }}>
+            {[
+              { label: "In pipeline", val: pipelineTotal },
+              { label: "Converted", val: convertedCount },
+              { label: "Conv. rate", val: convRate },
+            ].map((s) => (
+              <div key={s.label} style={{ textAlign: "center", padding: compact ? "4px 2px" : "8px 4px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                <p style={{ fontSize: compact ? 11 : 14, fontWeight: 900, color: "#0f172a", margin: 0 }}>{s.val}</p>
+                <p style={{ fontSize: compact ? 7 : 9, color: "#64748b", margin: "2px 0 0" }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: compact ? 3 : 5 }}>
+            {pipelineStages.filter((s) => s.count > 0 || !compact).map((s) => (
+              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <span style={{ fontSize: compact ? 8 : 10, fontWeight: 600, color: "#64748b", width: compact ? 52 : 72, flexShrink: 0 }}>{s.label}</span>
+                <div style={{ flex: 1, height: compact ? 6 : 8, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ width: `${s.pct || 0}%`, height: "100%", background: s.color, borderRadius: 99, minWidth: s.count > 0 ? 4 : 0 }} />
+                </div>
+                <span style={{ fontSize: compact ? 9 : 11, fontWeight: 800, color: "#1e293b", width: 16, textAlign: "right", flexShrink: 0 }}>{s.count}</span>
+              </div>
+            ))}
           </div>
         </div>
 
