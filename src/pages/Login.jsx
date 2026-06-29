@@ -6,6 +6,15 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { apiGet } from "../lib/api.js";
 import TSPublicationDoodleLogo from "../components/TSPublicationDoodleLogo.jsx";
 
+function resolvePostLoginPath(authUser, redirect = "") {
+  if (authUser.mustChangePassword) return "/change-password";
+  if (authUser.role === "employee") return "/employee";
+  if (redirect && redirect.startsWith("/") && !redirect.startsWith("/employee") && redirect !== "/login") {
+    return redirect;
+  }
+  return "/";
+}
+
 export default function Login() {
   const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -56,18 +65,8 @@ export default function Login() {
     try {
       const authUser = await login(loginId.trim(), password);
       toast.success(`Welcome back, ${authUser.name || authUser.loginId}!`);
-
-      if (authUser.mustChangePassword) {
-        navigate("/change-password", { replace: true });
-        return;
-      }
-
-      if (authUser.role === "employee") {
-        navigate("/employee", { replace: true });
-        return;
-      }
-
-      navigate(redirect && !redirect.startsWith("/employee") ? redirect : "/", { replace: true });
+      window.location.assign(resolvePostLoginPath(authUser, redirect));
+      return;
     } catch (err) {
       const msg = err?.message || "Invalid login ID or password";
       if (backendReady === false || msg.includes("404") || msg.includes("not found")) {
@@ -167,6 +166,8 @@ export default function Login() {
           <p className="text-xs text-center text-slate-400">
             Admin default: <span className="font-mono text-slate-500">ADMIN</span> /{" "}
             <span className="font-mono text-slate-500">Admin@12345</span>
+            <br />
+            <span className="text-slate-500">First login redirects to set a new password, then the dashboard.</span>
           </p>
         </form>
       </div>

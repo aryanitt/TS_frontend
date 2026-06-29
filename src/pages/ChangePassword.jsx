@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import toast from "react-hot-toast";
+import toast, { Toaster } from "react-hot-toast";
 import { Lock } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import TSPublicationDoodleLogo from "../components/TSPublicationDoodleLogo.jsx";
@@ -29,7 +29,8 @@ export default function ChangePassword() {
     try {
       await changePassword(currentPassword, newPassword);
       toast.success("Password updated successfully");
-      navigate(user?.role === "employee" ? "/employee" : "/", { replace: true });
+      window.location.assign(user?.role === "employee" ? "/employee" : "/");
+      return;
     } catch (err) {
       toast.error(err?.message || "Could not update password");
     } finally {
@@ -39,6 +40,7 @@ export default function ChangePassword() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 via-white to-pink-50 px-4 py-10">
+      <Toaster position="top-center" />
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4">

@@ -51,6 +51,7 @@ export function AuthProvider({ children }) {
     storeAuthToken(data.token);
     storeAuthUser(data.user);
     setUser(data.user);
+    setLoading(false);
     invalidateCache();
     return data.user;
   }, []);
