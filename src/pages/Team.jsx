@@ -1594,28 +1594,67 @@ function buildAiCoachInsights({
   firstName,
   assigned,
   converted,
+  qualified,
+  followups,
+  contacted,
   overallPerfClamped,
   revenue,
   fmtINR,
+  funnel,
 }) {
-  return [
-    {
-      id: "pipeline",
+  const insights = [];
+
+  insights.push({
+    id: "pipeline",
+    body: (
+      <>
+        {firstName} has <strong>{assigned} assigned leads</strong>
+        {qualified > 0 && <> with <strong>{qualified} qualified</strong></>}
+        {converted > 0 && <> and <strong>{converted} conversions</strong></>}
+        {assigned === 0 && <> — no active pipeline yet</>}
+        .
+      </>
+    ),
+  });
+
+  if (followups > 0) {
+    insights.push({
+      id: "followups",
       body: (
         <>
-          {firstName} has <strong>{assigned} assigned leads</strong> with <strong>{converted} conversions</strong>.
+          <strong>{followups} leads</strong> need follow-up — prioritize callbacks to improve conversion.
         </>
       ),
-    },
-    {
+    });
+  } else if (funnel?.length >= 2) {
+    const top = Number(funnel[0]?.value) || 0;
+    const next = Number(funnel[1]?.value) || 0;
+    if (top > 0 && top > next) {
+      const dropPct = Math.round(((top - next) / top) * 100);
+      insights.push({
+        id: "funnel",
+        body: (
+          <>
+            <strong>{dropPct}% drop</strong> from {funnel[0].name} to {funnel[1].name}
+            {contacted > 0 && <> — {contacted} contacted so far</>}.
+          </>
+        ),
+      });
+    }
+  }
+
+  if (insights.length < MAX_AI_COACH_INSIGHTS) {
+    insights.push({
       id: "kra",
       body: (
         <>
           <strong>KRA progress:</strong> {Math.round(overallPerfClamped)}% overall · {fmtINR(revenue)} collected.
         </>
       ),
-    },
-  ].slice(0, MAX_AI_COACH_INSIGHTS);
+    });
+  }
+
+  return insights.slice(0, MAX_AI_COACH_INSIGHTS);
 }
 
 function AiCoachInsightsPanel({ compact, insights }) {
@@ -1946,11 +1985,15 @@ function EmpDetail({ emp, onEdit, onDelete }) {
       firstName: activeEmp.name.split(" ")[0],
       assigned,
       converted,
+      qualified,
+      followups,
+      contacted: calls,
       overallPerfClamped,
       revenue,
       fmtINR,
+      funnel,
     }),
-    [activeEmp.name, assigned, converted, overallPerfClamped, revenue],
+    [activeEmp.name, assigned, converted, qualified, followups, calls, overallPerfClamped, revenue, funnel],
   );
 
   return (

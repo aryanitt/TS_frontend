@@ -21,6 +21,9 @@ import {
   meetingFromApi,
   partitionMeetings,
   generateGoogleMeetLink,
+  extractApiSopList,
+  readCachedEmployeeSops,
+  persistEmployeeSops,
 } from "../data/employeeMock.js";
 import { apiGet, apiPost, apiPut, apiPatch, invalidateCache, shouldPersistToApi } from "../lib/api.js";
 import {
@@ -153,6 +156,13 @@ export function EmployeeProvider({ children }) {
       setMeetingsHistory(split.history);
       if (Array.isArray(data.tasks)) {
         setTasksState(tasksMapFromApi(data.tasks, empProfile));
+      }
+      if (Array.isArray(data.sops) && data.sops.length) {
+        const mapped = mapAdminSopsForEmployee(data.sops);
+        if (mapped.length) {
+          setSopsState(mapped);
+          persistEmployeeSops(data.sops);
+        }
       }
       if (data.employee) {
         const mapped = { ...empProfile, ...mapApiEmployee(data.employee) };
@@ -347,19 +357,45 @@ export function EmployeeProvider({ children }) {
     });
   }, []);
 
-  const refreshSops = useCallback(async () => {
-    try {
-      const sopRes = await apiGet("/api/sop/all", { skipCache: true, cacheTtl: 0 });
-      const list = sopRes?.success === false
-        ? []
-        : (Array.isArray(sopRes?.sops) ? sopRes.sops : Array.isArray(sopRes?.data) ? sopRes.data : []);
-      setSopsState(mapAdminSopsForEmployee(list));
-      return list.length > 0;
-    } catch {
-      setSopsState([]);
-      return false;
+  const applySopList = useCallback((rawList) => {
+    const mapped = mapAdminSopsForEmployee(rawList);
+    if (mapped.length) {
+      setSopsState(mapped);
+      persistEmployeeSops(rawList);
+      return true;
     }
+    return false;
   }, []);
+
+  const refreshSops = useCallback(async () => {
+    const endpoints = ["/api/v1/sops", "/api/sop/all"];
+    for (const path of endpoints) {
+      try {
+        const sopRes = await apiGet(path, {
+          skipCache: true,
+          cacheTtl: 0,
+          headers: getCrmHeaders("employee", employee),
+        });
+        const list = extractApiSopList(sopRes);
+        if (list && list.length && applySopList(list)) {
+          return true;
+        }
+        if (list && list.length === 0) {
+          setSopsState([]);
+          return false;
+        }
+      } catch {
+        /* try next endpoint */
+      }
+    }
+
+    const cached = readCachedEmployeeSops();
+    if (cached.length && applySopList(cached)) {
+      return true;
+    }
+
+    return false;
+  }, [applySopList, employee]);
 
   const addCallRecord = useCallback(async (newCall) => {
     const tempId = newCall.id || Date.now();
@@ -718,6 +754,25 @@ export function EmployeeProvider({ children }) {
     }
   }, [usingApi]);
 
+  const refreshTeamEmployees = useCallback(async () => {
+    try {
+      const empRes = await apiGet("/api/v1/employees", {
+        headers: getCrmHeaders("employee", employee),
+        cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
+        skipCache: true,
+      });
+      if (empRes?.success === false) return [];
+      const employees = unwrapApiData(empRes);
+      const list = Array.isArray(employees) ? employees : [];
+      if (list.length) {
+        setTeamEmployees(list.map((e) => mapApiEmployee(e)));
+      }
+      return list.map((e) => mapApiEmployee(e));
+    } catch {
+      return [];
+    }
+  }, [employee]);
+
   const reassignLead = useCallback(async (leadId, employeeId, employeeName, method = "manual") => {
     setLeads((prev) => prev.map((l) => (
       l.id === leadId ? { ...l, assignee: employeeName, assigneeId: employeeId } : l
@@ -783,12 +838,14 @@ export function EmployeeProvider({ children }) {
         }
         const employees = unwrapApiData(empRes);
         const list = Array.isArray(employees) ? employees : [];
+        if (list.length && !cancelled) {
+          setTeamEmployees(list.map((e) => mapApiEmployee(e)));
+        }
         const matched = matchEmployeeFromList(list, seedProfile, MOCK_EMPLOYEE_ID);
         if (matched && !cancelled) {
           const mapped = { ...CURRENT_EMPLOYEE, ...mapApiEmployee(matched) };
           setEmployee(mapped);
           storeEmployee(mapped);
-          setTeamEmployees(list.map((e) => mapApiEmployee(e)));
           setUsingApi(true);
 
           const loaded = await loadEmployeeWorkspace(mapped.id, mapped);
@@ -926,6 +983,7 @@ export function EmployeeProvider({ children }) {
     refreshLeads,
     reassignLead,
     teamEmployees,
+    refreshTeamEmployees,
     usingApi,
     calls,
     setCalls,
@@ -944,7 +1002,7 @@ export function EmployeeProvider({ children }) {
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
     syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, refreshLeads,
-    reassignLead, teamEmployees,
+    reassignLead, teamEmployees, refreshTeamEmployees,
     usingApi, calls, addCallRecord, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading,
   ]);

@@ -1617,10 +1617,18 @@ export function normalizeCallSop(sop) {
   }
 }
 
+function normalizeQuestionText(q) {
+  if (typeof q === "string") return q.trim();
+  if (q && typeof q === "object") {
+    return String(q.text || q.question || q.q || q.title || "").trim();
+  }
+  return "";
+}
+
 function sopFromApiRow(api) {
   const stepsRaw = api.instruction_steps || api.instructionSteps || api.steps || [];
   const script = api.script || "";
-  const questions = (api.questions || []).filter(Boolean);
+  const questions = (api.questions || []).map(normalizeQuestionText).filter(Boolean);
   const frameworks = (api.frameworks || []).filter(Boolean);
 
   let steps = normalizeSopSteps(stepsRaw);
@@ -1660,6 +1668,44 @@ function sopFromApiRow(api) {
 function isEmployeeVisibleSop(api) {
   const status = String(api?.status || "Active").toLowerCase();
   return status !== "archived";
+}
+
+export const EMP_SOP_CACHE_KEY = "crm_employee_sops_v1";
+export const ADMIN_SOP_STORAGE_KEY = "admin_dashboard_sops";
+
+/** Parse SOP list from any known API response shape. */
+export function extractApiSopList(response) {
+  if (!response || response.success === false) return null;
+  if (Array.isArray(response.sops)) return response.sops;
+  if (Array.isArray(response.data?.sops)) return response.data.sops;
+  if (Array.isArray(response.data)) return response.data;
+  if (Array.isArray(response)) return response;
+  return [];
+}
+
+export function readCachedEmployeeSops() {
+  if (typeof window === "undefined") return [];
+  const keys = [EMP_SOP_CACHE_KEY, ADMIN_SOP_STORAGE_KEY];
+  for (const key of keys) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    } catch {
+      /* try next key */
+    }
+  }
+  return [];
+}
+
+export function persistEmployeeSops(list) {
+  if (typeof window === "undefined" || !Array.isArray(list) || !list.length) return;
+  try {
+    window.localStorage.setItem(EMP_SOP_CACHE_KEY, JSON.stringify(list));
+  } catch {
+    /* ignore quota errors */
+  }
 }
 
 /** Map admin/API SOP rows to employee read-only playbooks — no local mock merge. */
