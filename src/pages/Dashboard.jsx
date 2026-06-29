@@ -25,6 +25,7 @@ import {
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import { apiGet } from "../lib/api.js";
 import { mergeFilterData } from "../lib/fetchWithFallback.js";
+import { formatINR } from "../lib/indianFormat.js";
 
 // ─── Icon maps ────────────────────────────────────────────────────────────────
 const iconMap = { DollarSign, Users, Activity, FileText };
@@ -1882,7 +1883,7 @@ function LeadDrawerContent({ lead }) {
       <div className="grid grid-cols-2 gap-3">
         <Info label="Stage"    value={<Badge tone={stageTone(lead.stage)}>{lead.stage}</Badge>} />
         <Info label="Priority" value={<Badge tone={priorityTone(lead.priority)}>{lead.priority}</Badge>} />
-        <Info label="Revenue"  value={`$${lead.revenue.toLocaleString()}`} />
+        <Info label="Revenue"  value={formatINR(lead.revenue)} />
         <Info label="Assignee" value={lead.assignee} />
         <Info label="Phone"    value={lead.phone} />
         <Info label="Follow-up" value={lead.followUp} />

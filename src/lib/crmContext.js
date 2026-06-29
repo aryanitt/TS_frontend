@@ -59,3 +59,45 @@ export function mapApiEmployee(row) {
     avatarColor: "#2563eb",
   };
 }
+
+export function isMockEmployeeId(id, mockId = 101) {
+  return id == null || Number(id) === mockId;
+}
+
+function normalizePersonKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+/** Resolve a DB employee row from list using id, email, or fuzzy name match. */
+export function matchEmployeeFromList(employees, profile = {}, mockId = 101) {
+  if (!Array.isArray(employees) || !employees.length) return null;
+
+  const id = profile.id;
+  if (!isMockEmployeeId(id, mockId)) {
+    const byId = employees.find((row) => Number(row.id) === Number(id));
+    if (byId) return byId;
+  }
+
+  const email = normalizePersonKey(profile.email);
+  if (email) {
+    const byEmail = employees.find((row) => normalizePersonKey(row.email) === email);
+    if (byEmail) return byEmail;
+  }
+
+  const name = normalizePersonKey(profile.name);
+  if (name) {
+    const exact = employees.find((row) => normalizePersonKey(row.name) === name);
+    if (exact) return exact;
+
+    const first = name.split(/\s+/)[0];
+    if (first) {
+      const byFirst = employees.find((row) => normalizePersonKey(row.name).split(/\s+/)[0] === first);
+      if (byFirst) return byFirst;
+
+      const partial = employees.find((row) => normalizePersonKey(row.name).includes(first));
+      if (partial) return partial;
+    }
+  }
+
+  return employees[0] || null;
+}

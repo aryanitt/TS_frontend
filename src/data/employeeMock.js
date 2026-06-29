@@ -801,6 +801,20 @@ export function getFollowUpUrgency(dateStr) {
   return "upcoming";
 }
 
+export function formatFollowUpCompletedAt(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export function formatFollowUpSchedule(dateStr, timeStr) {
   const d = new Date(`${dateStr}T00:00:00`);
   const today = new Date(`${getEmpAppToday()}T00:00:00`);
@@ -1015,6 +1029,9 @@ export function followUpFromApi(apiFollowup, leads = [], type) {
     scheduledDate: dateStr,
     scheduledTime: timeStr,
     done: status === "completed" || status === "done",
+    completedWithMom: Boolean(apiFollowup.completedWithMom || apiFollowup.completed_with_mom),
+    completedAt: apiFollowup.completedAt || apiFollowup.completed_at || null,
+    completedTime: formatFollowUpCompletedAt(apiFollowup.completedAt || apiFollowup.completed_at),
     taskId: apiFollowup.taskId,
     leadId: apiFollowup.leadId,
   };
@@ -1601,6 +1618,28 @@ export function normalizeCallSop(sop) {
 }
 
 function sopFromApiRow(api) {
+  const stepsRaw = api.instruction_steps || api.instructionSteps || api.steps || [];
+  const script = api.script || "";
+  const questions = (api.questions || []).filter(Boolean);
+  const frameworks = (api.frameworks || []).filter(Boolean);
+
+  let steps = normalizeSopSteps(stepsRaw);
+  if (steps[0] && (script || questions.length || frameworks.length)) {
+    const first = steps[0];
+    steps = [{
+      ...first,
+      scripts: {
+        ...first.scripts,
+        opening: first.scripts.opening || script,
+        tips: first.scripts.tips || frameworks.join("\n"),
+      },
+      discovery: questions.length
+        ? questions.map((q, i) => ({ id: `d${i}`, q, hint: "" }))
+        : first.discovery,
+      checklist: questions.length && !first.checklist?.length ? questions : first.checklist,
+    }, ...steps.slice(1)];
+  }
+
   return normalizeCallSop({
     id: api.id,
     title: api.title || "SOP",
@@ -1609,41 +1648,30 @@ function sopFromApiRow(api) {
     budgetRange: api.budgetRange || "—",
     duration: api.estimated_time || api.estimatedTime || "—",
     icon: api.icon || "📋",
-    steps: api.instruction_steps || api.instructionSteps || api.steps,
+    status: api.status,
+    description: api.description,
+    steps,
     objections: Array.isArray(api.objections) ? api.objections : [],
     crossSell: api.crossSell || null,
   });
 }
 
-/** Keep rich Call Assistant fields when hydrating SOPs from the API. */
+/** Employees see all admin SOPs except archived (read-only). */
+function isEmployeeVisibleSop(api) {
+  const status = String(api?.status || "Active").toLowerCase();
+  return status !== "archived";
+}
+
+/** Map admin/API SOP rows to employee read-only playbooks — no local mock merge. */
+export function mapAdminSopsForEmployee(apiSops) {
+  if (!Array.isArray(apiSops)) return [];
+  return apiSops
+    .filter(isEmployeeVisibleSop)
+    .map(sopFromApiRow)
+    .filter(Boolean);
+}
+
+/** @deprecated Use mapAdminSopsForEmployee — kept for imports that expect this name. */
 export function mergeApiSopsWithLocal(apiSops) {
-  if (!Array.isArray(apiSops) || apiSops.length === 0) {
-    return ALL_EMP_SOPS.map(normalizeCallSop);
-  }
-
-  try {
-    const localById = new Map(ALL_EMP_SOPS.map((s) => [Number(s.id), s]));
-    const apiIds = new Set();
-
-    const merged = apiSops.map((api) => {
-      const id = Number(api.id);
-      apiIds.add(id);
-      const local = localById.get(id);
-      if (local) {
-        return normalizeCallSop({
-          ...local,
-          title: api.title || local.title,
-          category: api.category || local.category,
-          sub: sopSubtitle(api, local.sub),
-          steps: api.instruction_steps || api.instructionSteps || api.steps || local.steps,
-        });
-      }
-      return sopFromApiRow(api);
-    });
-
-    const extras = ALL_EMP_SOPS.filter((s) => !apiIds.has(Number(s.id)));
-    return [...merged, ...extras.map(normalizeCallSop)];
-  } catch {
-    return ALL_EMP_SOPS.map(normalizeCallSop);
-  }
+  return mapAdminSopsForEmployee(apiSops);
 }

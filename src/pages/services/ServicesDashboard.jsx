@@ -13,10 +13,10 @@ import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import {
   getAllServices, SERVICE_CATEGORIES, SERVICE_STATUSES, SERVICE_PRICING_SORT,
   SALES_DISTRIBUTION, SALES_TOTAL, REVENUE_TRAJECTORY,
-  formatServiceMoney, serviceBadgeTone, registerService,
+  formatServiceMoney, formatServicePriceLabel, serviceBadgeTone, registerService,
 } from "../../data/servicesMock.js";
 import { apiGet, apiPost, invalidateCache } from "../../lib/api.js";
-import AddServiceDrawer from "./AddServiceDrawer.jsx";
+import { formatIndianNumber } from "../../lib/indianFormat.js";
 
 const ICON_MAP = {
   bot: Bot,
@@ -361,7 +361,7 @@ export default function ServicesDashboard() {
                   {[
                     ["Revenue", formatServiceMoney(service.revenue)],
                     ["Clients", String(service.clients)],
-                    ["Leads", service.leads >= 1000 ? `${(service.leads / 1000).toFixed(1)}k` : String(service.leads)],
+                    ["Leads", service.leads >= 1000 ? `${(service.leads / 1000).toFixed(1)}k` : formatIndianNumber(service.leads)],
                   ].map(([label, val]) => (
                     <div key={label}>
                       <p className="text-[7px] font-bold text-slate-400 uppercase leading-none">{label}</p>
@@ -370,7 +370,7 @@ export default function ServicesDashboard() {
                   ))}
                 </div>
                 <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-rose-50">
-                  <span className="text-xs font-black text-rose-700">{service.price}</span>
+                  <span className="text-xs font-black text-rose-700">{formatServicePriceLabel(service.price, service.priceNum)}</span>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition" />
                 </div>
               </GlassCard>
