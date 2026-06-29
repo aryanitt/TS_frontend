@@ -16,6 +16,10 @@ export default function ChangePassword() {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
+    if (!currentPassword) {
+      toast.error("Enter your current password (temporary password: Admin@12345)");
+      return;
+    }
     if (newPassword.length < 6) {
       toast.error("New password must be at least 6 characters");
       return;
@@ -24,12 +28,17 @@ export default function ChangePassword() {
       toast.error("Passwords do not match");
       return;
     }
+    if (newPassword === currentPassword) {
+      toast.error("New password must be different from your current password");
+      return;
+    }
 
     setBusy(true);
     try {
-      await changePassword(currentPassword, newPassword);
+      const result = await changePassword(currentPassword, newPassword);
+      const role = result?.user?.role || user?.role;
       toast.success("Password updated successfully");
-      window.location.assign(user?.role === "employee" ? "/employee" : "/");
+      window.location.assign(role === "employee" ? "/employee" : "/");
       return;
     } catch (err) {
       toast.error(err?.message || "Could not update password");
@@ -52,6 +61,11 @@ export default function ChangePassword() {
               ? "You must change your temporary password before continuing."
               : "Update your account password."}
           </p>
+          {user?.mustChangePassword && (
+            <p className="text-xs text-slate-500 mt-2">
+              Current password is your temporary one: <span className="font-mono">Admin@12345</span>
+            </p>
+          )}
         </div>
 
         <form

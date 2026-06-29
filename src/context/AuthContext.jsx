@@ -64,6 +64,9 @@ export function AuthProvider({ children }) {
 
   const changePassword = useCallback(async (currentPassword, newPassword) => {
     const data = await apiPost("/api/auth/change-password", { currentPassword, newPassword });
+    if (!data?.success) {
+      throw new Error(data?.message || "Could not update password");
+    }
     if (data?.user) {
       setUser(data.user);
       storeAuthUser(data.user);
