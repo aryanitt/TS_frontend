@@ -73,11 +73,23 @@ export function mergeFetchedList(prev, next) {
   return next;
 }
 
+const WORKFLOW_STATUS = new Set(["notpick", "converted", "ni", "new", "attempted", "contacted", "booked"]);
+
+function normalizeEmployeeLeadStatus(lead) {
+  const raw = String(lead.status || lead.lead_status || "").toLowerCase().trim();
+  if (raw === "notpick" || raw.includes("not pick")) return "notpick";
+  if (raw === "converted") return "converted";
+  if (raw === "ni" || raw.includes("not interested")) return "ni";
+  if (raw === "new") return "new";
+  if (WORKFLOW_STATUS.has(raw)) return raw;
+  return normalizeTemperature(lead.temperature || lead.status);
+}
+
 export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
   const name = lead.leadName || lead.lead_name || "Lead";
   const id = lead.id;
   const av = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-  const status = normalizeTemperature(lead.temperature || lead.status);
+  const status = normalizeEmployeeLeadStatus(lead);
   const stage = lead.pipelineStage || lead.pipeline_stage || lead.status || "Attempted";
   const revenue = Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0);
 

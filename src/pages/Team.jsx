@@ -4,7 +4,6 @@ import { Maximize2 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { apiGet, apiPost, apiDelete, invalidateCache, readCachedJson } from "../lib/api.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
-import { useContainerNarrow } from "../lib/useIsMobile.js";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
 // ─── inject global styles ────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("__crm-styles-v2")) {
@@ -1848,43 +1847,44 @@ function buildAiCoachInsights({
 }
 
 function AiCoachInsightsPanel({ compact, insights }) {
-  const rows = (insights || []).slice(0, MAX_AI_COACH_INSIGHTS);
+  const rows = (insights || []).slice(0, compact ? 2 : MAX_AI_COACH_INSIGHTS);
 
   return (
     <div style={{
       background: "#fff",
       border: "1.5px solid #e11d48",
-      borderRadius: compact ? 12 : 16,
-      padding: compact ? "10px 12px" : "20px 24px",
+      borderRadius: compact ? 10 : 16,
+      padding: compact ? "8px 10px" : "20px 24px",
       boxShadow: "0 4px 14px rgba(244,63,94,0.08)",
       minWidth: 0,
+      alignSelf: "start",
     }}>
       <h3 style={{
-        fontSize: compact ? 10 : 12,
+        fontSize: compact ? 9 : 12,
         fontWeight: 800,
         textTransform: "uppercase",
         letterSpacing: ".08em",
         color: "#be123c",
-        margin: "0 0 8px",
+        margin: "0 0 6px",
         display: "flex",
         alignItems: "center",
         gap: 5,
       }}>
-        <Sparkles style={{ width: compact ? 12 : 14, height: compact ? 12 : 14 }} />
+        <Sparkles style={{ width: compact ? 11 : 14, height: compact ? 11 : 14 }} />
         AI Coach Insights
       </h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 4 : 10 }}>
         {rows.map((row) => (
           <div
             key={row.id}
             style={{
               background: "#fff1f2",
-              padding: compact ? "8px 9px" : "10px 12px",
-              borderRadius: compact ? 8 : 10,
+              padding: compact ? "6px 8px" : "10px 12px",
+              borderRadius: compact ? 7 : 10,
               borderLeft: "3px solid #e11d48",
-              fontSize: compact ? 10 : 11.5,
+              fontSize: compact ? 9 : 11.5,
               color: "#1e293b",
-              lineHeight: 1.35,
+              lineHeight: 1.3,
             }}
           >
             {row.body}
@@ -1896,17 +1896,19 @@ function AiCoachInsightsPanel({ compact, insights }) {
 }
 
 /** SVG pipeline funnel with readable labels on every stage. */
-function PipelineFunnelGraphic({ funnelData, compact }) {
+function PipelineFunnelGraphic({ funnelData, compact, dense = false, mini = false }) {
   const stages = (funnelData || []).slice(0, 5);
   if (!stages.length) return null;
 
-  const svgW = 280;
-  const segH = compact ? 52 : 58;
-  const segGap = compact ? 8 : 10;
-  const padTop = 8;
-  const svgH = padTop + stages.length * segH + (stages.length - 1) * segGap + 10;
+  const svgW = mini ? 188 : dense ? 240 : 280;
+  const segH = mini ? 22 : dense ? 34 : (compact ? 44 : 58);
+  const segGap = mini ? 2 : dense ? 3 : (compact ? 6 : 10);
+  const padTop = mini ? 1 : dense ? 2 : 8;
+  const svgH = padTop + stages.length * segH + (stages.length - 1) * segGap + (mini ? 2 : dense ? 4 : 10);
   const cx = svgW / 2;
-  const maxHalf = 128;
+  const maxHalf = mini ? 84 : dense ? 108 : 128;
+  const minTopHalf = mini ? 18 : 28;
+  const minBotHalf = mini ? 14 : 22;
 
   const gradStops = [
     ["#be123c", "#9f1239"],
@@ -1927,14 +1929,22 @@ function PipelineFunnelGraphic({ funnelData, compact }) {
   const segments = stages.map((_, idx) => {
     const t0 = idx / stages.length;
     const t1 = (idx + 1) / stages.length;
-    const topHalf = Math.max(28, maxHalf * (1 - t0 * 0.78));
-    const botHalf = Math.max(22, maxHalf * (1 - t1 * 0.78));
+    const topHalf = Math.max(minTopHalf, maxHalf * (1 - t0 * 0.78));
+    const botHalf = Math.max(minBotHalf, maxHalf * (1 - t1 * 0.78));
     const y0 = padTop + idx * (segH + segGap);
     const y1 = y0 + segH;
     const [c0, c1] = gradStops[idx] || gradStops[gradStops.length - 1];
     const narrow = botHalf < 38;
-    const countSize = narrow ? (compact ? 17 : 19) : (compact ? 20 : 24);
-    const labelSize = narrow ? (compact ? 9 : 10) : (compact ? 11 : 12);
+    const countSize = mini
+      ? (narrow ? 11 : 12)
+      : dense
+      ? (narrow ? 13 : 15)
+      : narrow ? (compact ? 17 : 19) : (compact ? 20 : 24);
+    const labelSize = mini
+      ? (narrow ? 6 : 7)
+      : dense
+      ? (narrow ? 7 : 8)
+      : narrow ? (compact ? 9 : 10) : (compact ? 11 : 12);
 
     return {
       points: `${cx - topHalf},${y0} ${cx + topHalf},${y0} ${cx + botHalf},${y1} ${cx - botHalf},${y1}`,
@@ -2026,9 +2036,6 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
-
-  const funnelCardRef = useRef(null);
-  const funnelStacked = useContainerNarrow(funnelCardRef, 720);
 
   const { leads, stats, activity, funnel, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
 
@@ -2610,57 +2617,74 @@ function EmpDetail({ emp, onEdit, onDelete }) {
       <div style={{
         display: "grid",
         gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit, minmax(300px, 1fr))",
-        gap: compact ? 10 : 16,
+        gap: compact ? 8 : 16,
+        alignItems: "start",
       }}>
-        {/* Funnel chart */}
+        {/* Funnel chart — funnel left, stage rows right (always side-by-side) */}
         <div style={{
           background: "#fff",
           border: "1px solid #ffe4e6",
-          borderRadius: compact ? 12 : 16,
-          padding: compact ? "10px 12px" : "14px 18px",
+          borderRadius: compact ? 10 : 16,
+          padding: compact ? "6px 8px" : "14px 18px",
           display: "flex",
           flexDirection: "column",
-          gap: compact ? 6 : 8,
+          gap: compact ? 4 : 8,
           minWidth: 0,
         }}>
           <div>
-            <h3 style={{ fontSize: compact ? 11 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: 0 }}>
+            <h3 style={{ fontSize: compact ? 9 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: 0 }}>
               Sales Pipeline Funnel
             </h3>
-            <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: "2px 0 0", lineHeight: 1.3 }}>
-              Deal conversion progression and conversion efficiency
-            </p>
+            {!compact && (
+              <p style={{ fontSize: 11, color: "#64748b", margin: "2px 0 0", lineHeight: 1.3 }}>
+                Deal conversion progression and conversion efficiency
+              </p>
+            )}
           </div>
 
           <div
-            ref={funnelCardRef}
             style={{
-            display: "flex",
-            flexDirection: funnelStacked ? "column" : "row",
-            gap: funnelStacked ? 12 : 16,
-            alignItems: funnelStacked ? "center" : "flex-start",
-            minWidth: 0,
-          }}>
-            {/* SVG funnel */}
+              display: "grid",
+              gridTemplateColumns: compact ? "minmax(96px, 34%) 1fr" : "200px 1fr",
+              gap: compact ? 6 : 14,
+              alignItems: "center",
+              minWidth: 0,
+            }}
+          >
+            {/* SVG funnel — left */}
             <div style={{
-              width: funnelStacked ? "100%" : 220,
-              maxWidth: funnelStacked ? 300 : 220,
-              minWidth: funnelStacked ? 0 : 200,
-              alignSelf: funnelStacked ? "center" : "flex-start",
+              width: "100%",
+              maxWidth: compact ? 120 : 200,
+              justifySelf: compact ? "center" : "start",
               flexShrink: 0,
-              position: "relative",
             }}>
-              <PipelineFunnelGraphic funnelData={funnelData} compact={compact || funnelStacked} />
+              <PipelineFunnelGraphic
+                funnelData={funnelData}
+                compact={compact}
+                dense={compact}
+                mini={compact}
+              />
             </div>
 
-            {/* Stage breakdown */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: compact ? 5 : 8, justifyContent: "flex-start", minWidth: 0, width: funnelStacked ? "100%" : undefined }}>
+            {/* Stage breakdown — right */}
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: compact ? 2 : 6,
+              justifyContent: "space-between",
+              minWidth: 0,
+              minHeight: compact ? 118 : undefined,
+            }}>
               {funnelData.map((item, idx) => {
                 const count = item.value.split(" ")[0];
                 const stageName = item.label;
                 const colors = ["#be123c", "#e11d48", "#dc2626", "#c2185b", "#881337"];
                 const bgs = ["#fff1f2", "#fff5f6", "#fff8f8", "#fffafb", "#ffffff"];
                 const borders = ["#fecdd3", "#ffe4e6", "#ffe4e6", "#ffe4e6", "#fecdd3"];
+                const rowPad = compact ? "2px 6px" : "10px 12px";
+                const convLabel = compact && item.sub !== "Top Funnel"
+                  ? item.sub.replace(" Conversion", "")
+                  : item.sub;
                 
                 return (
                   <div key={idx} style={{
@@ -2668,42 +2692,39 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    gap: 8,
-                    padding: funnelStacked ? "8px 10px" : (compact ? "8px 10px" : "12px 14px"),
-                    borderRadius: compact ? 10 : 12,
+                    gap: 4,
+                    padding: rowPad,
+                    borderRadius: compact ? 6 : 10,
                     background: bgs[idx],
                     border: `1px solid ${borders[idx]}`,
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.01)",
                     minWidth: 0,
+                    flex: compact ? 1 : undefined,
                   }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: compact ? 4 : 6, minWidth: 0, flex: 1 }}>
                       <div style={{
-                        width: 7,
-                        height: 7,
+                        width: compact ? 5 : 6,
+                        height: compact ? 5 : 6,
                         borderRadius: "50%",
                         background: colors[idx],
                         flexShrink: 0,
                       }} />
-                      <div style={{ minWidth: 0 }}>
-                        <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: "#1e293b" }}>{count}</span>
-                        <span style={{ fontSize: compact ? 10 : 11, color: "#64748b", marginLeft: 5 }}>{stageName}</span>
+                      <div style={{ minWidth: 0, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <span style={{ fontSize: compact ? 9 : 12, fontWeight: 700, color: "#1e293b" }}>{count}</span>
+                        <span style={{ fontSize: compact ? 8 : 11, color: "#64748b", marginLeft: 3 }}>{stageName}</span>
                       </div>
                     </div>
                     <span style={{
-                      fontSize: compact ? 9 : 10,
+                      fontSize: compact ? 7 : 10,
                       fontWeight: 700,
                       color: colors[idx],
                       background: "#ffffff",
-                      padding: compact ? "2px 6px" : "2px 8px",
-                      borderRadius: 10,
-                      border: `1.2px solid ${borders[idx]}`,
+                      padding: compact ? "1px 4px" : "2px 6px",
+                      borderRadius: 8,
+                      border: `1px solid ${borders[idx]}`,
                       flexShrink: 0,
                       whiteSpace: "nowrap",
-                      maxWidth: "100%",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
                     }}>
-                      {item.sub}
+                      {convLabel}
                     </span>
                   </div>
                 );
@@ -2716,8 +2737,9 @@ function EmpDetail({ emp, onEdit, onDelete }) {
         <div style={{
           display: "grid",
           gridTemplateColumns: compact ? "repeat(2, minmax(0, 1fr))" : "1fr",
-          gap: compact ? 8 : 16,
+          gap: compact ? 6 : 16,
           minWidth: 0,
+          alignItems: "start",
         }}>
           <AiCoachInsightsPanel compact={compact} insights={aiCoachInsights} />
 
@@ -2725,40 +2747,41 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           <div style={{
             background: "#fff",
             border: "1px solid #ffe4e6",
-            borderRadius: compact ? 12 : 16,
-            padding: compact ? "10px 12px" : "20px 24px",
+            borderRadius: compact ? 10 : 16,
+            padding: compact ? "8px 10px" : "20px 24px",
             minWidth: 0,
+            alignSelf: "start",
           }}>
-            <h3 style={{ fontSize: compact ? 10 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 10px" }}>
+            <h3 style={{ fontSize: compact ? 9 : 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#be123c", margin: "0 0 6px" }}>
               Daily Activity
             </h3>
-            <div style={{ position: "relative", paddingLeft: compact ? 14 : 18 }}>
+            <div style={{ position: "relative", paddingLeft: compact ? 12 : 18 }}>
               <div style={{ position: "absolute", left: 4, top: 4, bottom: 4, width: 1.5, background: "#f1f5f9" }} />
-              {(activity?.length ? activity : []).slice(0, 3).map((act, idx, arr) => (
-                <div key={`${act.lead_name}-${idx}`} style={{ position: "relative", paddingBottom: idx < arr.length - 1 ? (compact ? 10 : 14) : 0 }}>
+              {(activity?.length ? activity : []).slice(0, compact ? 2 : 3).map((act, idx, arr) => (
+                <div key={`${act.lead_name}-${idx}`} style={{ position: "relative", paddingBottom: idx < arr.length - 1 ? (compact ? 6 : 14) : 0 }}>
                   <div style={{
                     position: "absolute",
-                    left: -18,
+                    left: compact ? -14 : -18,
                     top: 2,
-                    width: 10,
-                    height: 10,
+                    width: 8,
+                    height: 8,
                     borderRadius: "50%",
                     background: "#e11d48",
                     border: "2px solid #ffffff",
                   }} />
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <PhoneCall style={{ width: 12, height: 12, color: "#be123c", opacity: 0.8 }} />
-                    <p style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", margin: 0 }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <PhoneCall style={{ width: 11, height: 11, color: "#be123c", opacity: 0.8, flexShrink: 0 }} />
+                    <p style={{ fontSize: compact ? 10 : 12, fontWeight: 600, color: "#1e293b", margin: 0, lineHeight: 1.25 }}>
                       {act.lead_name} · {act.status}
                     </p>
                   </div>
-                  <p style={{ fontSize: 10, color: "#64748b", margin: "3px 0 0 20px" }}>
+                  <p style={{ fontSize: compact ? 9 : 10, color: "#64748b", margin: "2px 0 0 16px", lineHeight: 1.25 }}>
                     {act.business || "Lead update"} · {act.time ? fmtDate(act.time) : "Recently"}
                   </p>
                 </div>
               ))}
               {!activity?.length && (
-                <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>No recent lead activity yet.</p>
+                <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: 0 }}>No recent lead activity yet.</p>
               )}
             </div>
           </div>

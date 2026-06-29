@@ -618,15 +618,18 @@ export function isEmployeeNewAssignedLead(lead) {
   if (!lead) return false;
   if (lead.acceptedAt || lead.accepted_at) return false;
   const assignStatus = String(lead.assignmentStatus || lead.assignment_status || "").toLowerCase();
-  if (assignStatus === "assigned") return true;
-  const stage = String(lead.stage || lead.pipelineStage || lead.pipeline_stage || "").toLowerCase();
-  return (stage === "new lead" || stage === "new") && assignStatus !== "accepted" && assignStatus !== "in_progress";
+  if (assignStatus === "accepted" || assignStatus === "in_progress") return false;
+  const stage = String(lead.stage || lead.pipelineStage || lead.pipeline_stage || "").toLowerCase().trim();
+  const inNewLeadStage = stage === "new lead" || stage === "new";
+  if (!inNewLeadStage) return false;
+  return assignStatus === "assigned" || assignStatus === "pending" || assignStatus === "unassigned";
 }
 
 export function mapEmpLeadKanbanStage(stage, status) {
   const s = (stage || "").toLowerCase();
+  const st = (status || "").toLowerCase();
   if (s === "new lead" || s === "new") return "new_lead";
-  if (status === "notpick" || s.includes("not pick")) return "not_pick";
+  if (st === "notpick" || st.includes("not pick") || s.includes("not pick")) return "not_pick";
   if (status === "converted" || s.includes("converted")) return "converted";
   if (s.includes("negotiation")) return "negotiation";
   if (s.includes("proposal")) return "proposal";

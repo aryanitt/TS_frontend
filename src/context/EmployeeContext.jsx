@@ -801,6 +801,7 @@ export function EmployeeProvider({ children }) {
     const current = leads.find((l) => l.id === leadId);
     const patch = employeeStagePatch(stageLabel, current?.status);
     const acceptedAt = fromNewAssigned ? new Date().toISOString() : current?.acceptedAt;
+    const prevSnapshot = current ? { ...current } : null;
 
     setLeads((prev) => prev.map((l) => {
       if (l.id !== leadId) return l;
@@ -818,11 +819,15 @@ export function EmployeeProvider({ children }) {
       try {
         await apiPatch(`/api/v1/leads/${leadId}/stage`, {
           stage: stageLabel,
-          status: stageLabel,
+          status: patch.employeeStatus || stageLabel,
         }, { headers: getCrmHeaders() });
         invalidateCache("/api/v1");
       } catch (err) {
+        if (prevSnapshot) {
+          setLeads((prev) => prev.map((l) => (l.id === leadId ? prevSnapshot : l)));
+        }
         toast.error(err.message || "Stage update failed");
+        throw err;
       }
     }
   }, [leads, usingApi]);

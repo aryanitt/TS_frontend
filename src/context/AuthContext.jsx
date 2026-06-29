@@ -80,8 +80,7 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (loginId, password) => {
     clearEmployeeStorage();
-    invalidateCache();
-    const data = await apiPost("/api/auth/login", { loginId, password });
+    const data = await apiPost("/api/auth/login", { loginId, password }, { skipCache: true });
     if (!data?.token || !data?.user) {
       throw new Error(data?.message || "Login failed");
     }

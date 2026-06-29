@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Lock, User, Eye, EyeOff } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.jsx";
 import TSPublicationDoodleLogo from "../components/TSPublicationDoodleLogo.jsx";
+
+const LOGIN_TOAST_ID = "login-feedback";
 
 function resolvePostLoginPath(authUser) {
   if (Boolean(authUser?.mustChangePassword)) return "/change-password";
@@ -16,30 +18,33 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || submittingRef.current) return;
 
     if (!loginId.trim() || !password) {
-      toast.error("Enter your login ID and password");
+      toast.error("Enter your login ID and password", { id: LOGIN_TOAST_ID });
       return;
     }
 
+    submittingRef.current = true;
     setBusy(true);
     try {
       const authUser = await login(loginId.trim(), password);
       const nextPath = resolvePostLoginPath(authUser);
-      toast.success(`Welcome back, ${authUser.name || authUser.loginId}!`);
+      toast.success(`Welcome back, ${authUser.name || authUser.loginId}!`, { id: LOGIN_TOAST_ID });
       window.location.replace(nextPath);
     } catch (err) {
+      submittingRef.current = false;
       setBusy(false);
       const msg = err?.message || "Invalid login ID or password";
       if (err?.status === 429 || msg.includes("Too many API")) {
-        toast.error("Too many attempts — wait 30 seconds, then try once.");
+        toast.error("Server is busy. Wait a few seconds and try again.", { id: LOGIN_TOAST_ID });
         return;
       }
-      toast.error(msg);
+      toast.error(msg, { id: LOGIN_TOAST_ID });
     }
   };
 
@@ -53,7 +58,6 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 via-white to-pink-50 px-4 py-10">
-      <Toaster position="top-center" />
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4">

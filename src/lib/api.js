@@ -19,9 +19,23 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const PRODUCTION_API_BASE =
   "https://mediumturquoise-capybara-737767.hostingersite.com";
 
+function isAuthApiPath(path) {
+  const raw = String(path || "");
+  const pathname = raw.startsWith("http")
+    ? (() => { try { return new URL(raw).pathname; } catch { return raw; } })()
+    : raw.split("?")[0];
+  return pathname.startsWith("/api/auth");
+}
+
+function resolveDirectAuthBase() {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl != null && String(envUrl).trim() !== "") {
+    return String(envUrl).replace(/\/$/, "");
+  }
+  return PRODUCTION_API_BASE;
+}
+
 export function getApiBase() {
-  // Browser must always use same-origin `/api` (Vercel/Nitro proxy or Vite dev proxy).
-  // Direct Hostinger URLs fail in the browser due to CORS even when VITE_API_URL is set in Vercel.
   if (typeof window !== "undefined") {
     return "";
   }
@@ -46,8 +60,12 @@ export function shouldPersistToApi(usingApi = false) {
 
 export function apiUrl(path) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
-  // Never call Hostinger directly from the browser — always same-origin /api (proxy).
   if (typeof window !== "undefined") {
+    // Auth hits Hostinger directly so many employees logging in together are not
+    // throttled by one shared Vercel proxy IP (Hostinger returns 429).
+    if (import.meta.env.PROD && isAuthApiPath(normalized)) {
+      return `${resolveDirectAuthBase()}${normalized}`;
+    }
     return normalized;
   }
   const base = getApiBase();
@@ -104,16 +122,18 @@ export function invalidateCache(match = "") {
 }
 
 async function performFetch(url, options = {}) {
-  const { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, ...fetchOptions } = options;
+  const { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, skipThrottle = false, ...fetchOptions } = options;
   const method = (fetchOptions.method || "GET").toUpperCase();
   if (method === "GET") {
     const existing = inflightGets.get(url);
     if (existing) return existing;
   }
 
-  const gap = lastFetchAt + MIN_FETCH_GAP_MS - Date.now();
-  if (gap > 0) await sleep(gap);
-  lastFetchAt = Date.now();
+  if (!skipThrottle) {
+    const gap = lastFetchAt + MIN_FETCH_GAP_MS - Date.now();
+    if (gap > 0) await sleep(gap);
+    lastFetchAt = Date.now();
+  }
 
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timeoutId = controller
@@ -205,6 +225,14 @@ function describeNonJsonResponse(status, contentType, preview) {
   return `Expected JSON from API but got ${contentType || "unknown type"}`;
 }
 
+const AUTH_RETRY_PATHS = ["/api/auth/login", "/api/auth/change-password"];
+
+function shouldRetryAuthPost(path, method, status, retryCount) {
+  if (method !== "POST" || status !== 429 || retryCount >= 3) return false;
+  const normalized = path.split("?")[0];
+  return AUTH_RETRY_PATHS.some((p) => normalized.endsWith(p));
+}
+
 /**
  * Cached fetch — returns parsed JSON for GET when cacheTtl > 0.
  */
@@ -236,8 +264,14 @@ export async function apiJson(path, options = {}) {
   }
 
   let response;
+  const skipThrottle = httpMethod !== "GET" || isAuthApiPath(path);
   try {
-    response = await performFetch(url, { ...fetchOptions, method: httpMethod, timeoutMs });
+    response = await performFetch(url, {
+      ...fetchOptions,
+      method: httpMethod,
+      timeoutMs,
+      skipThrottle,
+    });
   } catch (err) {
     const isNetwork = err instanceof TypeError
       || String(err?.message || "").toLowerCase().includes("failed to fetch");
@@ -271,6 +305,17 @@ export async function apiJson(path, options = {}) {
         ...fetchOptions,
       });
     }
+    if (shouldRetryAuthPost(path, httpMethod, response.status, _retry429)) {
+      await sleep(2000 * (2 ** _retry429));
+      return apiJson(path, {
+        cacheTtl,
+        skipCache,
+        method,
+        timeoutMs,
+        _retry429: _retry429 + 1,
+        ...fetchOptions,
+      });
+    }
     const err = new Error(describeNonJsonResponse(response.status, contentType, preview));
     err.status = response.status;
     throw err;
@@ -279,6 +324,17 @@ export async function apiJson(path, options = {}) {
   if (!response.ok) {
     if (isGet && response.status === 429 && _retry429 < 2) {
       await sleep(2000 * (_retry429 + 1));
+      return apiJson(path, {
+        cacheTtl,
+        skipCache,
+        method,
+        timeoutMs,
+        _retry429: _retry429 + 1,
+        ...fetchOptions,
+      });
+    }
+    if (shouldRetryAuthPost(path, httpMethod, response.status, _retry429)) {
+      await sleep(2000 * (2 ** _retry429));
       return apiJson(path, {
         cacheTtl,
         skipCache,
