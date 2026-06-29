@@ -13,6 +13,37 @@ import {
 
 const AuthContext = createContext(null);
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isLoginRateLimited(err) {
+  const msg = String(err?.message || "").toLowerCase();
+  return err?.status === 429 || msg.includes("429") || msg.includes("too many");
+}
+
+async function postLoginWithBackoff(loginId, password) {
+  // Spread burst logins from the same office network (shared public IP).
+  await sleep(Math.floor(Math.random() * 1500));
+
+  const maxAttempts = 6;
+  let lastErr;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await apiPost("/api/auth/login", { loginId, password }, {
+        skipCache: true,
+        skipAuth429Retry: true,
+        timeoutMs: 25000,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (!isLoginRateLimited(err) || attempt >= maxAttempts - 1) throw err;
+      await sleep(900 + Math.floor(Math.random() * 1100) + attempt * 1200);
+    }
+  }
+
+  throw lastErr;
+}
+
 function syncEmployeeProfileFromAuth(user) {
   if (user?.role === "employee" && user.employeeId) {
     storeEmployee({
@@ -80,7 +111,7 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (loginId, password) => {
     clearEmployeeStorage();
-    const data = await apiPost("/api/auth/login", { loginId, password }, { skipCache: true });
+    const data = await postLoginWithBackoff(loginId, password);
     if (!data?.token || !data?.user) {
       throw new Error(data?.message || "Login failed");
     }

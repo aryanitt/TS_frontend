@@ -40,8 +40,8 @@ export default function Login() {
       submittingRef.current = false;
       setBusy(false);
       const msg = err?.message || "Invalid login ID or password";
-      if (err?.status === 429 || msg.includes("Too many API")) {
-        toast.error("Server is busy. Wait a few seconds and try again.", { id: LOGIN_TOAST_ID });
+      if (err?.status === 429 || msg.toLowerCase().includes("too many")) {
+        toast.error("Login server is busy. Please wait 5 seconds and try again.", { id: LOGIN_TOAST_ID });
         return;
       }
       toast.error(msg, { id: LOGIN_TOAST_ID });

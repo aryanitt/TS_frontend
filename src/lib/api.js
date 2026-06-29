@@ -27,6 +27,17 @@ function isAuthApiPath(path) {
   return pathname.startsWith("/api/auth");
 }
 
+function isLocalDevHost() {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1";
+}
+
+/** Deployed browser builds call Hostinger directly for auth (avoids shared Vercel proxy IP). */
+function shouldUseDirectAuthUrl() {
+  return typeof window !== "undefined" && !isLocalDevHost();
+}
+
 function resolveDirectAuthBase() {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl != null && String(envUrl).trim() !== "") {
@@ -61,9 +72,9 @@ export function shouldPersistToApi(usingApi = false) {
 export function apiUrl(path) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   if (typeof window !== "undefined") {
-    // Auth hits Hostinger directly so many employees logging in together are not
-    // throttled by one shared Vercel proxy IP (Hostinger returns 429).
-    if (import.meta.env.PROD && isAuthApiPath(normalized)) {
+    // Auth hits Hostinger directly so concurrent logins are not throttled by one
+    // shared Vercel proxy IP (Hostinger returns 429 for burst traffic on one IP).
+    if (shouldUseDirectAuthUrl() && isAuthApiPath(normalized)) {
       return `${resolveDirectAuthBase()}${normalized}`;
     }
     return normalized;
@@ -227,8 +238,12 @@ function describeNonJsonResponse(status, contentType, preview) {
 
 const AUTH_RETRY_PATHS = ["/api/auth/login", "/api/auth/change-password"];
 
-function shouldRetryAuthPost(path, method, status, retryCount) {
-  if (method !== "POST" || status !== 429 || retryCount >= 3) return false;
+function authRetryDelayMs(retryCount) {
+  return 600 + Math.floor(Math.random() * 900) + retryCount * 800;
+}
+
+function shouldRetryAuthPost(path, method, status, retryCount, skipAuth429Retry) {
+  if (skipAuth429Retry || method !== "POST" || status !== 429 || retryCount >= 1) return false;
   const normalized = path.split("?")[0];
   return AUTH_RETRY_PATHS.some((p) => normalized.endsWith(p));
 }
@@ -242,6 +257,7 @@ export async function apiJson(path, options = {}) {
     skipCache = false,
     method = "GET",
     timeoutMs,
+    skipAuth429Retry = false,
     _retry429 = 0,
     ...fetchOptions
   } = options;
@@ -305,13 +321,14 @@ export async function apiJson(path, options = {}) {
         ...fetchOptions,
       });
     }
-    if (shouldRetryAuthPost(path, httpMethod, response.status, _retry429)) {
-      await sleep(2000 * (2 ** _retry429));
+    if (shouldRetryAuthPost(path, httpMethod, response.status, _retry429, skipAuth429Retry)) {
+      await sleep(authRetryDelayMs(_retry429));
       return apiJson(path, {
         cacheTtl,
         skipCache,
         method,
         timeoutMs,
+        skipAuth429Retry,
         _retry429: _retry429 + 1,
         ...fetchOptions,
       });
@@ -333,13 +350,14 @@ export async function apiJson(path, options = {}) {
         ...fetchOptions,
       });
     }
-    if (shouldRetryAuthPost(path, httpMethod, response.status, _retry429)) {
-      await sleep(2000 * (2 ** _retry429));
+    if (shouldRetryAuthPost(path, httpMethod, response.status, _retry429, skipAuth429Retry)) {
+      await sleep(authRetryDelayMs(_retry429));
       return apiJson(path, {
         cacheTtl,
         skipCache,
         method,
         timeoutMs,
+        skipAuth429Retry,
         _retry429: _retry429 + 1,
         ...fetchOptions,
       });
