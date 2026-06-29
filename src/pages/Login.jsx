@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
 import { Lock, User, Eye, EyeOff } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -7,8 +6,8 @@ import { apiGet } from "../lib/api.js";
 import TSPublicationDoodleLogo from "../components/TSPublicationDoodleLogo.jsx";
 
 function resolvePostLoginPath(authUser, redirect = "") {
-  if (authUser.mustChangePassword) return "/change-password";
-  if (authUser.role === "employee") return "/employee";
+  if (Boolean(authUser?.mustChangePassword)) return "/change-password";
+  if (authUser?.role === "employee") return "/employee";
   if (redirect && redirect.startsWith("/") && !redirect.startsWith("/employee") && redirect !== "/login") {
     return redirect;
   }
@@ -16,11 +15,7 @@ function resolvePostLoginPath(authUser, redirect = "") {
 }
 
 export default function Login() {
-  const { login, user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const redirect = params.get("redirect") || "";
-
+  const { login, loading: authLoading } = useAuth();
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -44,16 +39,6 @@ export default function Login() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    if (authLoading || !user) return;
-    if (user.mustChangePassword) {
-      navigate("/change-password", { replace: true });
-      return;
-    }
-    const target = user.role === "employee" ? "/employee" : (redirect || "/");
-    navigate(target, { replace: true });
-  }, [authLoading, user, navigate, redirect]);
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!loginId.trim() || !password) {
@@ -64,18 +49,17 @@ export default function Login() {
     setBusy(true);
     try {
       const authUser = await login(loginId.trim(), password);
+      const nextPath = resolvePostLoginPath(authUser);
       toast.success(`Welcome back, ${authUser.name || authUser.loginId}!`);
-      window.location.assign(resolvePostLoginPath(authUser, redirect));
-      return;
+      window.location.replace(nextPath);
     } catch (err) {
+      setBusy(false);
       const msg = err?.message || "Invalid login ID or password";
       if (backendReady === false || msg.includes("404") || msg.includes("not found")) {
         toast.error("Backend auth is not deployed yet. Pull latest code on Hostinger, run npm install && npm run seed:admin, then restart.");
       } else {
         toast.error(msg);
       }
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -102,7 +86,6 @@ export default function Login() {
               Backend auth is not live on Hostinger yet. In hPanel: pull latest code, run{" "}
               <span className="font-mono">npm install</span> and{" "}
               <span className="font-mono">npm run seed:admin</span>, then restart the app.
-              You can still try Sign in after that.
             </p>
           )}
         </div>
@@ -167,7 +150,7 @@ export default function Login() {
             Admin default: <span className="font-mono text-slate-500">ADMIN</span> /{" "}
             <span className="font-mono text-slate-500">Admin@12345</span>
             <br />
-            <span className="text-slate-500">First login redirects to set a new password, then the dashboard.</span>
+            <span className="text-slate-500">First login goes to change password, then the dashboard.</span>
           </p>
         </form>
       </div>

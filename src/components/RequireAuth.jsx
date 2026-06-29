@@ -1,13 +1,13 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { getAuthToken, getStoredAuthUser } from "../lib/crmContext.js";
+import { getAuthToken, getStoredAuthUser, normalizeAuthUser } from "../lib/crmContext.js";
 import PageLoader from "./PageLoader.jsx";
 
 export default function RequireAuth({ roles }) {
   const { user: ctxUser, loading } = useAuth();
   const location = useLocation();
   const storedUser = getAuthToken() ? getStoredAuthUser() : null;
-  const user = ctxUser || storedUser;
+  const user = normalizeAuthUser(ctxUser || storedUser);
 
   if (loading && !storedUser) return <PageLoader />;
 

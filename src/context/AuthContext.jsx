@@ -4,6 +4,7 @@ import {
   clearAuthStorage,
   getAuthToken,
   getStoredAuthUser,
+  normalizeAuthUser,
   storeAuthToken,
   storeAuthUser,
 } from "../lib/crmContext.js";
@@ -16,24 +17,33 @@ export function AuthProvider({ children }) {
 
   const bootstrap = useCallback(async () => {
     const token = getAuthToken();
+    const storedUser = getStoredAuthUser();
+
     if (!token) {
       setUser(null);
       setLoading(false);
       return;
     }
 
+    if (storedUser) {
+      setUser(storedUser);
+    }
+
     try {
       const data = await apiGet("/api/auth/me", { skipCache: true, cacheTtl: 0, timeoutMs: 12000 });
       if (data?.user) {
-        setUser(data.user);
-        storeAuthUser(data.user);
+        const nextUser = normalizeAuthUser(data.user);
+        setUser(nextUser);
+        storeAuthUser(nextUser);
+      }
+    } catch {
+      // Keep the stored session — /me can fail briefly during deploy or cold start.
+      if (storedUser) {
+        setUser(storedUser);
       } else {
         clearAuthStorage();
         setUser(null);
       }
-    } catch {
-      clearAuthStorage();
-      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -48,12 +58,13 @@ export function AuthProvider({ children }) {
     if (!data?.token || !data?.user) {
       throw new Error(data?.message || "Login failed");
     }
+    const nextUser = normalizeAuthUser(data.user);
     storeAuthToken(data.token);
-    storeAuthUser(data.user);
-    setUser(data.user);
+    storeAuthUser(nextUser);
+    setUser(nextUser);
     setLoading(false);
     invalidateCache();
-    return data.user;
+    return nextUser;
   }, []);
 
   const logout = useCallback(() => {
@@ -68,8 +79,9 @@ export function AuthProvider({ children }) {
       throw new Error(data?.message || "Could not update password");
     }
     if (data?.user) {
-      setUser(data.user);
-      storeAuthUser(data.user);
+      const nextUser = normalizeAuthUser(data.user);
+      setUser(nextUser);
+      storeAuthUser(nextUser);
     }
     return data;
   }, []);

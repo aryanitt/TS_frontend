@@ -22,22 +22,31 @@ export function storeAuthToken(token) {
   }
 }
 
+export function storeAuthUser(user) {
+  if (typeof window === "undefined" || !user) return;
+  try {
+    window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizeAuthUser(user)));
+  } catch {
+    // ignore
+  }
+}
+
+export function normalizeAuthUser(user) {
+  if (!user || typeof user !== "object") return null;
+  return {
+    ...user,
+    mustChangePassword: Boolean(user.mustChangePassword),
+    role: user.role || "employee",
+  };
+}
+
 export function getStoredAuthUser() {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(AUTH_USER_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return raw ? normalizeAuthUser(JSON.parse(raw)) : null;
   } catch {
     return null;
-  }
-}
-
-export function storeAuthUser(user) {
-  if (typeof window === "undefined" || !user) return;
-  try {
-    window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  } catch {
-    // ignore
   }
 }
 
