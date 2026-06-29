@@ -39,6 +39,8 @@ import {
   temperatureToApi,
   employeeStagePatch,
   unwrapApiData,
+  unwrapApiList,
+  mergeFetchedList,
 } from "../lib/leadSync.js";
 
 const EmployeeContext = createContext(null);
@@ -46,6 +48,9 @@ const EmployeeContext = createContext(null);
 const EMPLOYEE_CACHE_TTL = 60_000;
 const EMPLOYEE_LIST_CACHE_TTL = 5 * 60 * 1000;
 const AVATAR_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b"];
+
+/** Survives React Strict Mode remount — prevents duplicate bootstrap wiping workspace state. */
+let employeeBootstrapPromise = null;
 
 function initialsFromName(name) {
   return name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -64,10 +69,18 @@ function readJsonStorage(key, fallback) {
 
 function readBootstrappedEmployee() {
   const stored = getStoredEmployee();
-  if (stored?.id && stored.id !== MOCK_EMPLOYEE_ID) {
+  if (stored?.id && !isMockEmployeeId(stored.id, MOCK_EMPLOYEE_ID)) {
     return { ...CURRENT_EMPLOYEE, ...stored };
   }
   return CURRENT_EMPLOYEE;
+}
+
+function countTasks(map) {
+  if (!map || typeof map !== "object") return 0;
+  return Object.values(map).reduce(
+    (sum, items) => sum + (Array.isArray(items) ? items.length : 0),
+    0,
+  );
 }
 
 export function EmployeeProvider({ children }) {
@@ -139,23 +152,37 @@ export function EmployeeProvider({ children }) {
       const data = unwrapApiData(res) || res.data || res;
       const workspaceLeads = Array.isArray(data.leads)
         ? data.leads.map((l) => apiLeadToEmployee(l, AVATAR_COLORS))
-        : [];
-      setLeads(workspaceLeads);
-      setFollowUpsState(
-        Array.isArray(data.followups)
-          ? data.followups.map((f) => followUpFromApi(f, workspaceLeads))
-          : [],
-      );
-      setCalls(
-        Array.isArray(data.calls)
-          ? data.calls.map((c) => callFromApi(c, workspaceLeads))
-          : [],
-      );
-      const split = partitionMeetings(Array.isArray(data.meetings) ? data.meetings : [], workspaceLeads);
-      setMeetingsUpcoming(split.upcoming);
-      setMeetingsHistory(split.history);
+        : null;
+
+      if (workspaceLeads) {
+        setLeads((prev) => mergeFetchedList(prev, workspaceLeads));
+      }
+
+      if (Array.isArray(data.followups)) {
+        setFollowUpsState((prev) => {
+          const next = data.followups.map((f) => followUpFromApi(f, workspaceLeads || []));
+          return mergeFetchedList(prev, next);
+        });
+      }
+
+      if (Array.isArray(data.calls)) {
+        setCalls((prev) => {
+          const next = data.calls.map((c) => callFromApi(c, workspaceLeads || []));
+          return mergeFetchedList(prev, next);
+        });
+      }
+
+      if (Array.isArray(data.meetings)) {
+        const split = partitionMeetings(data.meetings, workspaceLeads || []);
+        setMeetingsUpcoming((prev) => mergeFetchedList(prev, split.upcoming));
+        setMeetingsHistory((prev) => mergeFetchedList(prev, split.history));
+      }
+
       if (Array.isArray(data.tasks)) {
-        setTasksState(tasksMapFromApi(data.tasks, empProfile));
+        setTasksState((prev) => {
+          const next = tasksMapFromApi(data.tasks, empProfile);
+          return countTasks(next) === 0 && countTasks(prev) > 0 ? prev : next;
+        });
       }
       if (Array.isArray(data.sops) && data.sops.length) {
         const mapped = mapAdminSopsForEmployee(data.sops);
@@ -186,8 +213,12 @@ export function EmployeeProvider({ children }) {
         headers: getCrmHeaders("employee", empProfile),
         cacheTtl: EMPLOYEE_CACHE_TTL,
       });
-      const items = unwrapApiData(res);
-      setLeads(items.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)));
+      const items = unwrapApiList(res);
+      if (!items) return false;
+      setLeads((prev) => mergeFetchedList(
+        prev,
+        items.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
+      ));
       setUsingApi(true);
       return true;
     } catch {
@@ -205,8 +236,12 @@ export function EmployeeProvider({ children }) {
         headers: getCrmHeaders("employee", empProfile),
         cacheTtl: EMPLOYEE_CACHE_TTL,
       });
-      const items = unwrapApiData(res);
-      setTasksState(tasksMapFromApi(items, empProfile));
+      const items = unwrapApiList(res);
+      if (!items) return false;
+      setTasksState((prev) => {
+        const next = tasksMapFromApi(items, empProfile);
+        return countTasks(next) === 0 && countTasks(prev) > 0 ? prev : next;
+      });
       setUsingApi(true);
       return true;
     } catch {
@@ -224,9 +259,12 @@ export function EmployeeProvider({ children }) {
         headers: getCrmHeaders(),
         cacheTtl: EMPLOYEE_CACHE_TTL,
       });
-      const items = unwrapApiData(res);
-      if (!Array.isArray(items)) return false;
-      setFollowUpsState(items.map((f) => followUpFromApi(f, leadList)));
+      const items = unwrapApiList(res);
+      if (!items) return false;
+      setFollowUpsState((prev) => mergeFetchedList(
+        prev,
+        items.map((f) => followUpFromApi(f, leadList)),
+      ));
       setUsingApi(true);
       return true;
     } catch {
@@ -381,7 +419,7 @@ export function EmployeeProvider({ children }) {
           return true;
         }
         if (list && list.length === 0) {
-          setSopsState([]);
+          setSopsState((prev) => (prev.length ? prev : []));
           return false;
         }
       } catch {
@@ -806,10 +844,11 @@ export function EmployeeProvider({ children }) {
         headers: getCrmHeaders(),
         cacheTtl: EMPLOYEE_CACHE_TTL,
       });
-      const items = unwrapApiData(res);
+      const items = unwrapApiList(res);
+      if (!items) return false;
       const split = partitionMeetings(items, leadList);
-      setMeetingsUpcoming(split.upcoming);
-      setMeetingsHistory(split.history);
+      setMeetingsUpcoming((prev) => mergeFetchedList(prev, split.upcoming));
+      setMeetingsHistory((prev) => mergeFetchedList(prev, split.history));
       setUsingApi(true);
       return true;
     } catch {
@@ -850,7 +889,7 @@ export function EmployeeProvider({ children }) {
 
           const loaded = await loadEmployeeWorkspace(mapped.id, mapped);
           if (!loaded) {
-            await refreshLeads(mapped.id);
+            await refreshLeads(mapped.id, mapped);
           }
           await refreshTasks(mapped.id, mapped);
           try {
@@ -858,7 +897,6 @@ export function EmployeeProvider({ children }) {
           } catch {
             /* SOPs optional */
           }
-          if (!cancelled) setLoading(false);
           return;
         }
       } catch {
@@ -866,14 +904,21 @@ export function EmployeeProvider({ children }) {
       }
 
       if (!cancelled) {
-        setEmployee(seedProfile);
+        const persisted = getStoredEmployee();
+        const fallbackProfile = persisted?.id && !isMockEmployeeId(persisted.id, MOCK_EMPLOYEE_ID)
+          ? { ...CURRENT_EMPLOYEE, ...persisted }
+          : seedProfile;
+
+        setEmployee((prev) => (
+          !isMockEmployeeId(prev?.id, MOCK_EMPLOYEE_ID) ? prev : fallbackProfile
+        ));
         setUsingApi(true);
         try {
-          const loaded = await loadEmployeeWorkspace(seedProfile.id, seedProfile);
+          const loaded = await loadEmployeeWorkspace(fallbackProfile.id, fallbackProfile);
           if (!loaded) {
-            await refreshLeads(seedProfile.id);
+            await refreshLeads(fallbackProfile.id, fallbackProfile);
           }
-          await refreshTasks(seedProfile.id, seedProfile);
+          await refreshTasks(fallbackProfile.id, fallbackProfile);
         } catch {
           /* show empty workspace until API recovers */
         }
@@ -882,13 +927,22 @@ export function EmployeeProvider({ children }) {
         } catch {
           /* SOPs optional */
         }
-        setLoading(false);
       }
     }
 
-    bootstrap();
+    if (!employeeBootstrapPromise) {
+      employeeBootstrapPromise = bootstrap().catch((err) => {
+        employeeBootstrapPromise = null;
+        throw err;
+      });
+    }
+
+    employeeBootstrapPromise.finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+
     return () => { cancelled = true; };
-    // Bootstrap once on mount; workspace loaders are stable enough for initial hydration.
+    // Bootstrap once per page load; workspace loaders are stable enough for initial hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
