@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Lock, User, Eye, EyeOff } from "lucide-react";
-import toast from "react-hot-toast";
+import toast, { Toaster } from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.jsx";
 import { apiGet } from "../lib/api.js";
 import TSPublicationDoodleLogo from "../components/TSPublicationDoodleLogo.jsx";
 
 export default function Login() {
-  const { login, user } = useAuth();
+  const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const redirect = params.get("redirect") || "";
@@ -35,15 +35,15 @@ export default function Login() {
     return () => { cancelled = true; };
   }, []);
 
-  if (user) {
+  useEffect(() => {
+    if (authLoading || !user) return;
     if (user.mustChangePassword) {
       navigate("/change-password", { replace: true });
-      return null;
+      return;
     }
     const target = user.role === "employee" ? "/employee" : (redirect || "/");
     navigate(target, { replace: true });
-    return null;
-  }
+  }, [authLoading, user, navigate, redirect]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -54,10 +54,6 @@ export default function Login() {
 
     setBusy(true);
     try {
-      if (backendReady === false) {
-        throw new Error("Auth API is not deployed on the backend yet. Redeploy the latest backend to Hostinger.");
-      }
-
       const authUser = await login(loginId.trim(), password);
       toast.success(`Welcome back, ${authUser.name || authUser.loginId}!`);
 
@@ -73,14 +69,28 @@ export default function Login() {
 
       navigate(redirect && !redirect.startsWith("/employee") ? redirect : "/", { replace: true });
     } catch (err) {
-      toast.error(err?.message || "Invalid login ID or password");
+      const msg = err?.message || "Invalid login ID or password";
+      if (backendReady === false || msg.includes("404") || msg.includes("not found")) {
+        toast.error("Backend auth is not deployed yet. Pull latest code on Hostinger, run npm install && npm run seed:admin, then restart.");
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setBusy(false);
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 via-white to-pink-50">
+        <p className="text-sm text-slate-500">Loading…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 via-white to-pink-50 px-4 py-10">
+      <Toaster position="top-center" />
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4">
@@ -89,8 +99,11 @@ export default function Login() {
           <h1 className="text-2xl font-bold text-slate-900">TS Publication CRM</h1>
           <p className="text-sm text-slate-500 mt-1">Sign in with your login ID or email</p>
           {backendReady === false && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-              Backend auth is not live yet. Deploy the latest backend code to Hostinger and run the users table SQL.
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 text-left">
+              Backend auth is not live on Hostinger yet. In hPanel: pull latest code, run{" "}
+              <span className="font-mono">npm install</span> and{" "}
+              <span className="font-mono">npm run seed:admin</span>, then restart the app.
+              You can still try Sign in after that.
             </p>
           )}
         </div>
@@ -146,13 +159,14 @@ export default function Login() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-sm font-bold transition-colors"
+            className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors cursor-pointer"
           >
             {busy ? "Signing in…" : "Sign in"}
           </button>
 
           <p className="text-xs text-center text-slate-400">
-            Admin default: <span className="font-mono text-slate-500">ADMIN</span> — change password after first login
+            Admin default: <span className="font-mono text-slate-500">ADMIN</span> /{" "}
+            <span className="font-mono text-slate-500">Admin@12345</span>
           </p>
         </form>
       </div>

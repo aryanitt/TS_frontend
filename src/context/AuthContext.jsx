@@ -23,7 +23,7 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      const data = await apiGet("/api/auth/me", { skipCache: true, cacheTtl: 0 });
+      const data = await apiGet("/api/auth/me", { skipCache: true, cacheTtl: 0, timeoutMs: 12000 });
       if (data?.user) {
         setUser(data.user);
         storeAuthUser(data.user);
