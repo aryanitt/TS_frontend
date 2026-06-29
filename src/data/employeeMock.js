@@ -629,13 +629,20 @@ export function mapEmpLeadKanbanStage(stage, status) {
   const s = (stage || "").toLowerCase();
   const st = (status || "").toLowerCase();
   if (s === "new lead" || s === "new") return "new_lead";
-  if (st === "notpick" || st.includes("not pick") || s.includes("not pick")) return "not_pick";
-  if (status === "converted" || s.includes("converted")) return "converted";
+  if (s.includes("not pick")) return "not_pick";
   if (s.includes("negotiation")) return "negotiation";
   if (s.includes("proposal")) return "proposal";
+  if (s.includes("converted") || s === "won") return "converted";
   if (s.includes("booked") || s.includes("call booked")) return "booked";
   if (s.includes("contacted") || s.includes("qualified")) return "contacted";
   if (s.includes("attempted")) return "attempted";
+  if (st === "notpick" || st.includes("not pick")) return "not_pick";
+  if (st === "converted") return "converted";
+  if (st.includes("negotiation")) return "negotiation";
+  if (st.includes("proposal")) return "proposal";
+  if (st.includes("booked")) return "booked";
+  if (st.includes("contacted")) return "contacted";
+  if (st.includes("attempted")) return "attempted";
   return "attempted";
 }
 
@@ -738,6 +745,7 @@ export const EMP_TEAM = [
 
 export const LEAD_STATUS_LABELS = {
   hot: "Hot", warm: "Warm", cold: "Cold", converted: "Converted", notpick: "Not Pick", ni: "Not Interested",
+  attempted: "Attempted", contacted: "Contacted", booked: "Booked", proposal: "Proposal", negotiation: "Negotiation", new: "New",
 };
 
 export const EMP_LEAD_TEMPERATURES = [

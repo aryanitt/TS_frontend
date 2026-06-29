@@ -75,7 +75,26 @@ export function mergeFetchedList(prev, next) {
 
 const WORKFLOW_STATUS = new Set(["notpick", "converted", "ni", "new", "attempted", "contacted", "booked"]);
 
+function workflowStatusFromStage(stageRaw) {
+  const s = String(stageRaw || "").toLowerCase();
+  if (!s) return null;
+  if (s === "new lead" || s === "new") return "new";
+  if (s.includes("not pick")) return "notpick";
+  if (s.includes("attempted")) return "attempted";
+  if (s.includes("contacted") || s.includes("qualified")) return "contacted";
+  if (s.includes("booked") || s.includes("call booked")) return "booked";
+  if (s.includes("proposal")) return "proposal";
+  if (s.includes("negotiation")) return "negotiation";
+  if (s.includes("converted") || s === "won") return "converted";
+  if (s.includes("closed") || s.includes("not interested")) return "ni";
+  return null;
+}
+
 function normalizeEmployeeLeadStatus(lead) {
+  const fromStage = workflowStatusFromStage(
+    lead.pipelineStage || lead.pipeline_stage || lead.stage,
+  );
+  if (fromStage) return fromStage;
   const raw = String(lead.status || lead.lead_status || "").toLowerCase().trim();
   if (raw === "notpick" || raw.includes("not pick")) return "notpick";
   if (raw === "converted") return "converted";
@@ -158,16 +177,23 @@ export function apiLeadToAdmin(lead) {
 }
 
 export function employeeStagePatch(stageLabel, currentStatus) {
-  const status = stageLabel === "Converted" ? "converted"
-    : stageLabel === "Not Pick" ? "notpick"
-    : stageLabel === "Closed" ? "ni"
-    : stageLabel === "New Lead" ? "new"
-    : currentStatus;
+  const STAGE_STATUS = {
+    "New Lead": "new",
+    "Not Pick": "notpick",
+    "Attempted": "attempted",
+    "Contacted": "contacted",
+    "Booked": "booked",
+    "Proposal": "proposal",
+    "Negotiation": "negotiation",
+    "Converted": "converted",
+    "Closed": "ni",
+  };
+  const employeeStatus = STAGE_STATUS[stageLabel] || currentStatus;
   return {
     stage: stageLabel,
     pipelineStage: stageLabel,
     status: stageLabel,
-    employeeStatus: status,
+    employeeStatus,
   };
 }
 
