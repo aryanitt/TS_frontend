@@ -4,6 +4,7 @@ import { Maximize2 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { apiGet, apiPost, apiDelete, invalidateCache, readCachedJson } from "../lib/api.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
+import { useContainerNarrow } from "../lib/useIsMobile.js";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
 // ─── inject global styles ────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("__crm-styles-v2")) {
@@ -325,6 +326,14 @@ const ACCESS_DESC = {
 };
 const WORK_LOCATIONS = ["Office", "Remote", "Hybrid"];
 
+function funnelConversionLabel(funnel, idx) {
+  if (idx === 0) return "Top Funnel";
+  const prev = Number(funnel[idx - 1]?.value) || 0;
+  const curr = Number(funnel[idx]?.value) || 0;
+  if (!prev) return "0% Conversion";
+  return `${Math.round((curr / prev) * 100)}% Conversion`;
+}
+
 function useEmployeeLeads(emp) {
   const [leads,        setLeads]        = useState([]);
   const [stats,        setStats]        = useState(null);
@@ -343,7 +352,7 @@ function useEmployeeLeads(emp) {
 
     apiGet(
       `/api/team/employees/leads?${params.toString()}`,
-      { cacheTtl: 60 * 1000 },
+      { cacheTtl: 0, skipCache: true },
     )
       .then((data) => {
         if (data.success) {
@@ -467,6 +476,19 @@ const initials = (n) =>
     .map((w) => w[0].toUpperCase())
     .join("");
 const genId = () => "EMP" + Math.random().toString(36).slice(2, 6).toUpperCase();
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  const s = String(value);
+  const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const fmtDate = (d) => {
   try {
     return new Date(d).toLocaleDateString("en-IN", {
@@ -507,7 +529,7 @@ function normalizeEmployee(emp) {
     accessLevel: emp.access_level || "Member",
     employeeId: emp.emp_id || "",
     callyserId: emp.callyser_id || "",
-    joiningDate: emp.joining_date || "",
+    joiningDate: toDateInputValue(emp.joining_date),
     department: emp.department || "",
     territory: emp.territory || "",
     managerName: emp.manager_name || "",
@@ -1130,6 +1152,16 @@ function MemberForm({ fields, errors, set, blur }) {
         </div>
 
         <div style={{ marginTop: 12 }}>
+          <label style={labelStyle}>Joining Date</label>
+          <input
+            type="date"
+            style={inputBase(false)}
+            value={fields.joiningDate || todayISO()}
+            onChange={(e) => set("joiningDate", e.target.value)}
+          />
+        </div>
+
+        <div style={{ marginTop: 12 }}>
           <label style={labelStyle}>Role {requiredStar}</label>
           <input
             style={inputBase(errors.role)}
@@ -1236,7 +1268,16 @@ const EMPTY = {
   meetingWeightage: "",
   cashTarget: "",
   cashWeightage: "",
+  joiningDate: "",
 };
+
+function defaultMemberFields() {
+  return {
+    ...EMPTY,
+    employeeId: genId(),
+    joiningDate: todayISO(),
+  };
+}
 
 function useForm(init) {
   const [fields, setFields] = useState(init);
@@ -1283,10 +1324,14 @@ function useForm(init) {
 // ─── Add Member Drawer ────────────────────────────────────────────────────────
 
 function AddDrawer({ open, onClose, onSave, members }) {
-  const form = useForm({ ...EMPTY, employeeId: genId() });
+  const form = useForm(defaultMemberFields());
+
+  useEffect(() => {
+    if (open) form.reset(defaultMemberFields());
+  }, [open]);
 
   const close = () => {
-    form.reset({ ...EMPTY, employeeId: genId() });
+    form.reset(defaultMemberFields());
     onClose();
   };
 
@@ -1310,7 +1355,7 @@ function AddDrawer({ open, onClose, onSave, members }) {
           style: { background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" },
           iconTheme: { primary: "#16a34a", secondary: "#fff" },
         });
-        form.reset({ ...EMPTY, employeeId: genId() });
+        form.reset(defaultMemberFields());
         onClose();
       } catch (err) {
         // duplicate email / phone from backend
@@ -1971,16 +2016,19 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   const [activeTab, setActiveTab] = useState("All Leads");
   const [search, setSearch] = useState("");
   const [compact, setCompact] = useState(() =>
-    typeof window !== "undefined" && window.innerWidth < 768,
+    typeof window !== "undefined" && window.innerWidth < 1024,
   );
 
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
+    const mq = window.matchMedia("(max-width: 1023px)");
     const sync = () => setCompact(mq.matches);
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
+
+  const funnelCardRef = useRef(null);
+  const funnelStacked = useContainerNarrow(funnelCardRef, 720);
 
   const { leads, stats, activity, funnel, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
 
@@ -2022,7 +2070,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     setCashW(parseFloat(activeEmp.cashWeightage || activeEmp.cash_weightage) || 0);
 
     const achieved = activeEmp.achieved || {};
-    setCallA(achieved.calls ?? stats?.contacted ?? activeEmp.leads ?? 0);
+    setCallA(achieved.calls ?? stats?.contacted ?? 0);
     setLeadA(achieved.qualifiedLeads ?? stats?.qualified ?? 0);
     setMeetA(achieved.meetings ?? stats?.totalMeetings ?? 0);
     setCashA(achieved.cash ?? stats?.revenue ?? 0);
@@ -2096,19 +2144,19 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     return result;
   }, [leads, search]);
 
-  const calls     = stats?.contacted ?? activeEmp.leads ?? 0;
+  const calls     = stats?.contacted ?? 0;
   const meetings  = stats?.totalMeetings ?? 0;
-  const assigned  = stats?.totalLeads ?? activeEmp.leads ?? 0;
+  const assigned  = stats?.totalLeads ?? 0;
   const qualified = stats?.qualified ?? 0;
   const followups = stats?.followUps ?? 0;
-  const converted = stats?.converted ?? activeEmp.conv ?? 0;
-  const revenue   = stats?.revenue ?? activeEmp.revenue ?? 0;
+  const converted = stats?.converted ?? 0;
+  const revenue   = stats?.revenue ?? 0;
 
   const funnelData = funnel?.length
     ? funnel.map((f, idx) => ({
         label: f.name,
         value: `${f.value} ${f.name}`,
-        sub: idx === 0 ? "Top Funnel" : `${Math.round((f.value / (funnel[idx - 1].value || 1)) * 100)}% Conversion`,
+        sub: funnelConversionLabel(funnel, idx),
         width: `${Math.max(40, 100 - idx * 12)}%`,
         opacity: Math.max(0.45, 1 - idx * 0.12),
       }))
@@ -2584,27 +2632,29 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             </p>
           </div>
 
-          <div style={{
+          <div
+            ref={funnelCardRef}
+            style={{
             display: "flex",
-            flexDirection: compact ? "column" : "row",
-            gap: compact ? 10 : 16,
-            alignItems: "flex-start",
+            flexDirection: funnelStacked ? "column" : "row",
+            gap: funnelStacked ? 12 : 16,
+            alignItems: funnelStacked ? "center" : "flex-start",
             minWidth: 0,
           }}>
-            {/* Left: SVG Sloping Funnel */}
+            {/* SVG funnel */}
             <div style={{
-              width: compact ? "100%" : 220,
-              maxWidth: compact ? 280 : 220,
-              minWidth: compact ? 200 : 200,
-              alignSelf: "flex-start",
+              width: funnelStacked ? "100%" : 220,
+              maxWidth: funnelStacked ? 300 : 220,
+              minWidth: funnelStacked ? 0 : 200,
+              alignSelf: funnelStacked ? "center" : "flex-start",
               flexShrink: 0,
               position: "relative",
             }}>
-              <PipelineFunnelGraphic funnelData={funnelData} compact={compact} />
+              <PipelineFunnelGraphic funnelData={funnelData} compact={compact || funnelStacked} />
             </div>
 
-            {/* Right: Detailed Legend */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: compact ? 5 : 8, justifyContent: "flex-start", minWidth: 0 }}>
+            {/* Stage breakdown */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: compact ? 5 : 8, justifyContent: "flex-start", minWidth: 0, width: funnelStacked ? "100%" : undefined }}>
               {funnelData.map((item, idx) => {
                 const count = item.value.split(" ")[0];
                 const stageName = item.label;
@@ -2615,18 +2665,18 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                 return (
                   <div key={idx} style={{
                     display: "flex",
-                    flexDirection: compact ? "column" : "row",
-                    alignItems: compact ? "flex-start" : "center",
-                    justifyContent: compact ? "flex-start" : "space-between",
-                    gap: compact ? 4 : 8,
-                    padding: compact ? "8px 10px" : "12px 14px",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    padding: funnelStacked ? "8px 10px" : (compact ? "8px 10px" : "12px 14px"),
                     borderRadius: compact ? 10 : 12,
                     background: bgs[idx],
                     border: `1px solid ${borders[idx]}`,
                     boxShadow: "0 1px 3px rgba(0,0,0,0.01)",
                     minWidth: 0,
                   }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: compact ? undefined : 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
                       <div style={{
                         width: 7,
                         height: 7,
@@ -3439,7 +3489,7 @@ export default function Team() {
       work_location: formFields.workLocation || "Office",
       access_level: formFields.accessLevel || "Member",
       notes: formFields.notes || null,
-      joining_date: formFields.joiningDate || null,
+      joining_date: formFields.joiningDate || todayISO(),
       callyser_id: formFields.callyserId || null,
       emp_id: formFields.employeeId || null,
       salary: formFields.salary ? Number(formFields.salary) : null,
