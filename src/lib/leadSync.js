@@ -128,8 +128,15 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
     email: lead.email || "",
     city: lead.city || "",
     country: lead.country || "India",
-    assignee: typeof lead.assignedTo === "object" ? lead.assignedTo.name : "",
-    assigneeId: typeof lead.assignedTo === "object" ? lead.assignedTo.id : lead.assignedTo,
+    assignee: typeof lead.assignedTo === "object"
+      ? lead.assignedTo.name
+      : (lead.assignee_name || lead.assigneeName || ""),
+    assigneeId: (() => {
+      const raw = lead.assignedTo ?? lead.assigned_to ?? lead.assigneeId ?? lead.assignee_id;
+      if (raw == null) return null;
+      if (typeof raw === "object") return raw.id ?? raw._id ?? null;
+      return raw;
+    })(),
     pipelineStage: stage,
     temperature: lead.temperature,
     expectedRevenue: revenue,

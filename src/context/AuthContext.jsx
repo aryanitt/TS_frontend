@@ -88,6 +88,15 @@ export function AuthProvider({ children }) {
       const data = await apiGet("/api/auth/me", { skipCache: true, cacheTtl: 0, timeoutMs: 12000 });
       if (data?.user) {
         const nextUser = normalizeAuthUser(data.user);
+        if (
+          storedUser?.role === "employee"
+          && storedUser.employeeId != null
+          && nextUser.employeeId != null
+          && Number(storedUser.employeeId) !== Number(nextUser.employeeId)
+        ) {
+          clearEmployeeStorage();
+          invalidateCache("/api/v1/employee");
+        }
         setUser(nextUser);
         storeAuthUser(nextUser);
         syncEmployeeProfileFromAuth(nextUser);
