@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { Maximize2 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
-import { apiGet, apiPost, apiDelete, invalidateCache, readCachedJson } from "../lib/api.js";
+import { apiGet, apiPost, apiDelete, invalidateCache } from "../lib/api.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
 // ─── inject global styles ────────────────────────────────────────────────────
@@ -265,7 +265,6 @@ import {
   RadialBar,
 } from "recharts";
 import { GlassCard, Badge, StatCard, SectionHeader, Avatar } from "../components/Primitives.jsx";
-import { performers } from "../data/mock.js";
 
 // ─── colour tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -3362,7 +3361,9 @@ export default function Team() {
   }, []);
   const { apiLabel, preset, fromDate, toDate } = useDateRange();
   const [q, setQ] = useState("");
-  const [members, setMembers] = useState(performers);
+  const [members, setMembers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(true);
+  const [membersError, setMembersError] = useState(null);
   const [activeEmp, setActiveEmp] = useState(null);
   const [deleteEmp, setDeleteEmp] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -3391,25 +3392,31 @@ export default function Team() {
   }
 }, []);
 
+  const fetchEmployees = useCallback(async () => {
+    setMembersLoading(true);
+    setMembersError(null);
+    try {
+      invalidateCache("/api/team/employees");
+      const data = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
+      if (data?.success && Array.isArray(data.employees)) {
+        setMembers(data.employees.map(normalizeEmployee));
+      } else {
+        setMembers([]);
+        setMembersError(data?.message || "Could not load team members");
+      }
+    } catch (error) {
+      console.error("Failed to fetch employees:", error);
+      setMembers([]);
+      setMembersError(error.message || "Failed to load team members");
+    } finally {
+      setMembersLoading(false);
+    }
+  }, []);
+
   // ── fetch employees on mount ────────────────────────────────────────────
   useEffect(() => {
-    const cached = readCachedJson("/api/team/employees");
-    if (cached?.success) {
-      setMembers(cached.employees.map(normalizeEmployee));
-    }
-
-    const fetchEmployees = async () => {
-      try {
-        const data = await apiGet("/api/team/employees");
-        if (data.success) {
-          setMembers(data.employees.map(normalizeEmployee));
-        }
-      } catch (error) {
-        console.error("Failed to fetch employees:", error);
-      }
-    };
     fetchEmployees();
-  }, []);
+  }, [fetchEmployees]);
 
   // ── fetch KPIs when nav date range changes ─────────────────────────────
  useEffect(() => {
@@ -3540,6 +3547,7 @@ export default function Team() {
     const normalized = normalizeEmployee(data.employee);
     setMembers((prev) => [normalized, ...prev]);
     fetchKPIs();
+    fetchEmployees();
 
     if (data.credentials) {
       setNewMemberName(formFields.name);
@@ -3677,7 +3685,24 @@ export default function Team() {
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: compactMembers ? 4 : 6, padding: compactMembers ? 6 : 8 }}>
-        {filtered.length === 0 && (
+        {membersLoading && (
+          <div style={{ padding: "40px 0", textAlign: "center", fontSize: 13, color: "oklch(0.46 0.02 280)" }}>
+            Loading team members…
+          </div>
+        )}
+        {!membersLoading && membersError && (
+          <div style={{ padding: "40px 16px", textAlign: "center" }}>
+            <p style={{ fontSize: 13, color: "#be123c", marginBottom: 8 }}>{membersError}</p>
+            <button
+              type="button"
+              onClick={fetchEmployees}
+              className="text-xs font-semibold text-rose-700 hover:text-rose-900 underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!membersLoading && !membersError && filtered.length === 0 && (
           <div
             style={{
               padding: "40px 0",
@@ -3686,10 +3711,10 @@ export default function Team() {
               color: "oklch(0.46 0.02 280)",
             }}
           >
-            No team members match your search.
+            {q.trim() ? "No team members match your search." : "No team members yet. Use Add Member to create one."}
           </div>
         )}
-        {filtered.map((p, i) => (
+        {!membersLoading && !membersError && filtered.map((p, i) => (
           <motion.div
             key={p.id}
             initial={{ opacity: 0, y: 6 }}
