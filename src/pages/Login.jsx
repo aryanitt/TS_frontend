@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Lock, User, Eye, EyeOff } from "lucide-react";
+import { Lock, User, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.jsx";
 import TSPublicationDoodleLogo from "../components/TSPublicationDoodleLogo.jsx";
@@ -10,6 +10,61 @@ function resolvePostLoginPath(authUser) {
   if (Boolean(authUser?.mustChangePassword)) return "/change-password";
   if (authUser?.role === "employee") return "/employee";
   return "/";
+}
+
+function AuthShell({ children, title, subtitle }) {
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-slate-950">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(244,63,94,0.35),transparent)]"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.35] bg-[linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:48px_48px]"
+        aria-hidden
+      />
+      <div className="pointer-events-none absolute -left-24 top-1/4 h-72 w-72 rounded-full bg-rose-500/20 blur-3xl" aria-hidden />
+      <div className="pointer-events-none absolute -right-16 bottom-0 h-80 w-80 rounded-full bg-amber-400/10 blur-3xl" aria-hidden />
+
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-10 sm:px-6">
+        <div className="w-full max-w-[420px]">
+          <div className="mb-8 text-center">
+            <div className="mx-auto mb-5 inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-3 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+              <TSPublicationDoodleLogo size={64} className="border-white/20 shadow-none" />
+            </div>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              {title}
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-slate-400">{subtitle}</p>
+          </div>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ id, label, icon: Icon, type, value, onChange, placeholder, autoComplete, trailing }) {
+  return (
+    <div className="space-y-2">
+      <label htmlFor={id} className="block text-sm font-medium text-slate-200">
+        {label}
+      </label>
+      <div className="relative group">
+        <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-rose-400" />
+        <input
+          id={id}
+          type={type}
+          autoComplete={autoComplete}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          className="w-full rounded-xl border border-white/10 bg-white/[0.06] py-3 pl-10 pr-11 text-sm text-white placeholder:text-slate-500 shadow-inner shadow-black/10 outline-none transition-all focus:border-rose-400/50 focus:bg-white/[0.08] focus:ring-2 focus:ring-rose-500/25"
+        />
+        {trailing}
+      </div>
+    </div>
+  );
 }
 
 export default function Login() {
@@ -50,87 +105,88 @@ export default function Login() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 via-white to-pink-50">
-        <p className="text-sm text-slate-500">Loading…</p>
-      </div>
+      <AuthShell title="TS Publication CRM" subtitle="Preparing your workspace…">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-8 py-12 backdrop-blur-md">
+          <Loader2 className="h-8 w-8 animate-spin text-rose-400" />
+          <p className="text-sm text-slate-400">Loading session</p>
+        </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 via-white to-pink-50 px-4 py-10">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-4">
-            <TSPublicationDoodleLogo size={56} />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">TS Publication CRM</h1>
-          <p className="text-sm text-slate-500 mt-1">Sign in with your login ID or email</p>
-        </div>
+    <AuthShell title="TS Publication CRM" subtitle="Sign in with your login ID or work email">
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_24px_64px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-8"
+      >
+        <Field
+          id="loginId"
+          label="Login ID or email"
+          icon={User}
+          type="text"
+          autoComplete="username"
+          value={loginId}
+          onChange={(e) => setLoginId(e.target.value)}
+          placeholder="ADMIN or name@company.com"
+        />
 
-        <form
-          onSubmit={handleSubmit}
-          className="bg-white border border-rose-100 rounded-2xl shadow-xl shadow-rose-100/50 p-6 sm:p-8 space-y-5"
+        <Field
+          id="password"
+          label="Password"
+          icon={Lock}
+          type={showPassword ? "text" : "password"}
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Enter your password"
+          trailing={
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-500 transition hover:bg-white/10 hover:text-slate-300"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          }
+        />
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="group relative mt-2 flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 py-3.5 text-sm font-semibold text-white shadow-lg shadow-rose-900/40 transition hover:from-rose-500 hover:to-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <div>
-            <label htmlFor="loginId" className="block text-xs font-semibold uppercase tracking-wide text-rose-700 mb-2">
-              Login ID or Email
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                id="loginId"
-                type="text"
-                autoComplete="username"
-                value={loginId}
-                onChange={(e) => setLoginId(e.target.value)}
-                placeholder="ADMIN or name@company.com"
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-rose-300"
-              />
-            </div>
+          {busy ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Signing in…
+            </>
+          ) : (
+            "Sign in"
+          )}
+        </button>
+
+        <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
+          <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-slate-300">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+            First-time admin access
           </div>
-
-          <div>
-            <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-wide text-rose-700 mb-2">
-              Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                className="w-full pl-10 pr-11 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-rose-300"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors cursor-pointer"
-          >
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-
-          <p className="text-xs text-center text-slate-400">
-            Admin default: <span className="font-mono text-slate-500">ADMIN</span> /{" "}
-            <span className="font-mono text-slate-500">Admin@12345</span>
-            <br />
-            <span className="text-slate-500">First login goes to change password, then the dashboard.</span>
+          <p className="text-xs leading-relaxed text-slate-500">
+            Default credentials:{" "}
+            <span className="font-mono text-slate-400">ADMIN</span>
+            {" / "}
+            <span className="font-mono text-slate-400">Admin@12345</span>
           </p>
-        </form>
-      </div>
-    </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
+            You will be asked to set a new password on first login.
+          </p>
+        </div>
+      </form>
+
+      <p className="mt-6 text-center text-[11px] text-slate-600">
+        Secure access for admin and sales team members
+      </p>
+    </AuthShell>
   );
 }
