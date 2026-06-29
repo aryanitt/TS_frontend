@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import {
-  Calculator, ChevronDown, Calendar, Target, Users, Kanban, Award,
+  Calculator, Calendar, Target, Users, Kanban, Award,
   Clock, Phone, TrendingUp, MessageSquare, Repeat, Mail, Tag,
 } from "lucide-react";
 import {
@@ -16,6 +16,7 @@ import {
 import { useIsMobile } from "../hooks/use-mobile.tsx";
 import toast, { Toaster } from "react-hot-toast";
 import { apiGet } from "../lib/api.js";
+import { CustomSelect } from "../components/CustomSelect.jsx";
 
 const MONTH_OPTIONS = [
   { value: "2026-06", label: "June, 2026" },
@@ -473,30 +474,18 @@ function incentiveStatusTone(status) {
   return "warning";
 }
 
-function SelectField({ label, value, onChange, options, icon: Icon, compact = false }) {
+function SelectField({ label, value, onChange, options, icon: Icon, compact = false, searchable = false, showAvatars = false }) {
   return (
-    <div className="min-w-0">
-      <label className={`font-bold text-slate-400 uppercase tracking-wider block ${compact ? "text-[9px] mb-1" : "text-[10px] mb-1.5"}`}>
-        {label}
-      </label>
-      <div className="relative min-w-0">
-        {Icon && (
-          <Icon className={`absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-rose-300 pointer-events-none ${compact ? "w-3.5 h-3.5" : "w-4 h-4"}`} />
-        )}
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={`w-full min-w-0 appearance-none rounded-lg sm:rounded-xl border border-rose-100 bg-white text-slate-800 font-semibold py-0 pr-8 outline-none focus:border-rose-400 transition truncate ${
-            compact ? "h-9 text-[11px] sm:text-sm" : "h-10 text-sm"
-          } ${Icon ? (compact ? "pl-8" : "pl-9") : "pl-3"}`}
-        >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-        <ChevronDown className={`absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none ${compact ? "w-3.5 h-3.5" : "w-4 h-4"}`} />
-      </div>
-    </div>
+    <CustomSelect
+      label={label}
+      value={value}
+      onChange={onChange}
+      options={options}
+      icon={Icon}
+      compact={compact}
+      searchable={searchable}
+      showAvatars={showAvatars}
+    />
   );
 }
 
@@ -626,7 +615,11 @@ export default function Incentives() {
     [teammates, selectedId],
   );
 
-  const employeeOptions = teammates.map((t) => ({ value: String(t.id), label: t.name }));
+  const employeeOptions = teammates.map((t) => ({
+    value: String(t.id),
+    label: t.name,
+    subtitle: t.department || t.team || t.role,
+  }));
   const weekRanges = useMemo(() => getWeekRanges(selectedMonth), [selectedMonth]);
   const totalKraWeight = useMemo(() => kraRows.reduce((s, r) => s + getSafeNum(r.weight), 0), [kraRows]);
 
@@ -787,6 +780,8 @@ export default function Incentives() {
               options={employeeOptions}
               icon={Users}
               compact={isMobile}
+              searchable
+              showAvatars
             />
             <SelectField
               label="Month"

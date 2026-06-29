@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect } from "react";
 import {
   Target, Scale, Percent, FileSliders,
-  Search, AlertTriangle, RefreshCw,
+  AlertTriangle, RefreshCw, Users,
 } from "lucide-react";
 import { Badge } from "../components/Primitives.jsx";
 import toast, { Toaster } from "react-hot-toast";
 import AdminProfileHeader, { DashboardScrollbarStyles } from "../components/AdminProfileHeader.jsx";
 import { SettingsSidebar, SettingsMobileTabs, SettingsPanel, PanelFooter } from "../components/SettingsLayout.jsx";
+import { CustomSelect, EmployeeListPicker, colorForName } from "../components/CustomSelect.jsx";
+import { initialsFromName } from "../lib/adminProfile.js";
 import { apiGet, apiPut } from "../lib/api.js";
 
 function mapEmployeeToTarget(emp, savedTargets) {
@@ -220,13 +222,6 @@ export default function Settings() {
     );
   };
 
-  // ─── Filter targets list ───
-  const filteredTargets = useMemo(() => {
-    return employeeTargets.filter(e =>
-      e.name.toLowerCase().includes(targetSearch.toLowerCase())
-    );
-  }, [employeeTargets, targetSearch]);
-
   return (
     <div className="space-y-4 sm:space-y-6 page-shell min-w-0">
       <Toaster position="top-right" />
@@ -299,40 +294,16 @@ export default function Settings() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
                     {/* Select Employee Card */}
-                    <div className="p-4 border border-rose-100/50 rounded-2xl bg-slate-50/50 flex flex-col gap-3">
-                      <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Search employee..."
-                          value={targetSearch}
-                          onChange={(e) => setTargetSearch(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 border border-rose-200 rounded-xl bg-white text-slate-800 placeholder:text-slate-400 text-xs outline-none focus:border-rose-400"
-                        />
-                      </div>
-
-                      <div className="space-y-1 overflow-y-auto max-h-48 pr-1 no-sb">
-                        {targetsLoading && (
-                          <p className="text-xs text-slate-400 py-4 text-center">Loading employees…</p>
-                        )}
-                        {!targetsLoading && filteredTargets.length === 0 && (
-                          <p className="text-xs text-slate-400 py-4 text-center">No employees found. Add team members on the Team page.</p>
-                        )}
-                        {!targetsLoading && filteredTargets.map(e => (
-                          <div
-                            key={e.id}
-                            onClick={() => setSelectedTargetEmp(e.id)}
-                            className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition flex justify-between items-center ${
-                              activeTargetEmp?.id === e.id
-                                ? "bg-rose-50 border border-rose-200 text-rose-700"
-                                : "hover:bg-slate-100 text-slate-600 border border-transparent"
-                            }`}
-                          >
-                            <span>{e.name}</span>
-                            <span className="text-[9px] text-slate-400 font-medium truncate">{e.team}</span>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="p-4 border border-rose-100/60 rounded-2xl bg-gradient-to-b from-white to-rose-50/30 shadow-[0_2px_12px_rgba(244,63,94,0.04)] flex flex-col min-h-[280px]">
+                      <EmployeeListPicker
+                        employees={employeeTargets}
+                        selectedId={selectedTargetEmp}
+                        onSelect={setSelectedTargetEmp}
+                        search={targetSearch}
+                        onSearchChange={setTargetSearch}
+                        loading={targetsLoading}
+                        emptyMessage="No employees found. Add team members on the Team page."
+                      />
                     </div>
 
                     {/* Employee Target Form */}
@@ -341,8 +312,17 @@ export default function Settings() {
                         <p className="text-xs text-slate-400 py-8 text-center">Select an employee to edit targets.</p>
                       ) : (
                       <>
-                      <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                        <span className="text-xs font-black text-[#be123c] uppercase">{activeTargetEmp.name}'s Target slate</span>
+                      <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+                        <span
+                          className="w-10 h-10 rounded-xl grid place-items-center text-xs font-bold text-white shrink-0 shadow-sm"
+                          style={{ background: colorForName(activeTargetEmp.name) }}
+                        >
+                          {initialsFromName(activeTargetEmp.name)}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-black text-slate-900 truncate">{activeTargetEmp.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium mt-0.5">Monthly target slate</p>
+                        </div>
                         <Badge tone="primary">{activeTargetEmp.team}</Badge>
                       </div>
 
@@ -398,31 +378,26 @@ export default function Settings() {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-                      <div>
-                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Target Team</label>
-                        <select
-                          value={bulkTeam}
-                          onChange={(e) => setBulkTeam(e.target.value)}
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-700 text-xs outline-none"
-                        >
-                          {bulkTeams.map((team) => (
-                            <option key={team} value={team}>{team}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Metric Target Field</label>
-                        <select
-                          value={bulkField}
-                          onChange={(e) => setBulkField(e.target.value)}
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-700 text-xs outline-none"
-                        >
-                          <option value="calls">Call Volume</option>
-                          <option value="leads">Converted Leads</option>
-                          <option value="meetings">Scheduled Meetings</option>
-                          <option value="revenue">Revenue Quota</option>
-                        </select>
-                      </div>
+                      <CustomSelect
+                        label="Target Team"
+                        value={bulkTeam}
+                        onChange={setBulkTeam}
+                        options={bulkTeams.map((team) => ({ value: team, label: team }))}
+                        icon={Users}
+                        compact
+                      />
+                      <CustomSelect
+                        label="Metric Target Field"
+                        value={bulkField}
+                        onChange={setBulkField}
+                        options={[
+                          { value: "calls", label: "Call Volume" },
+                          { value: "leads", label: "Converted Leads" },
+                          { value: "meetings", label: "Scheduled Meetings" },
+                          { value: "revenue", label: "Revenue Quota" },
+                        ]}
+                        compact
+                      />
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">New Target Value</label>
                         <input
