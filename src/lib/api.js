@@ -3,12 +3,15 @@
  * Configure production API via VITE_API_URL (see .env.example).
  */
 
+import { getAuthHeaders } from "./crmContext.js";
+
 const CACHE_PREFIX = "crm_cache:";
 const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
 const memoryCache = new Map();
 const inflightGets = new Map();
 let lastFetchAt = 0;
 const MIN_FETCH_GAP_MS = 120;
+const DEFAULT_FETCH_TIMEOUT_MS = 20000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -101,7 +104,8 @@ export function invalidateCache(match = "") {
 }
 
 async function performFetch(url, options = {}) {
-  const method = (options.method || "GET").toUpperCase();
+  const { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, ...fetchOptions } = options;
+  const method = (fetchOptions.method || "GET").toUpperCase();
   if (method === "GET") {
     const existing = inflightGets.get(url);
     if (existing) return existing;
@@ -111,15 +115,24 @@ async function performFetch(url, options = {}) {
   if (gap > 0) await sleep(gap);
   lastFetchAt = Date.now();
 
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
   const request = fetch(url, {
-    ...options,
+    ...fetchOptions,
+    signal: controller?.signal,
     headers: {
       Accept: "application/json",
-      ...(options.body && !(options.body instanceof FormData)
+      ...getAuthHeaders(),
+      ...(fetchOptions.body && !(fetchOptions.body instanceof FormData)
         ? { "Content-Type": "application/json" }
         : {}),
-      ...options.headers,
+      ...fetchOptions.headers,
     },
+  }).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
   });
 
   if (method === "GET") {
@@ -129,7 +142,17 @@ async function performFetch(url, options = {}) {
     });
   }
 
-  return request;
+  try {
+    return await request;
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error(
+        `API request timed out after ${Math.round(timeoutMs / 1000)}s. `
+        + "Check that the backend is running and auth routes are deployed.",
+      );
+    }
+    throw err;
+  }
 }
 
 function storeGetCache(key, data, ttl) {
@@ -167,6 +190,9 @@ function parseApiResponseBody(text, contentType) {
 
 function describeNonJsonResponse(status, contentType, preview) {
   if (preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")) {
+    if (status === 404) {
+      return "Auth API not found (404). Deploy the latest backend with auth routes to Hostinger.";
+    }
     return "API request hit the frontend instead of the backend. Check VITE_API_URL.";
   }
   if (status === 429) return "Too many API requests — wait a moment and try again.";
@@ -187,6 +213,7 @@ export async function apiJson(path, options = {}) {
     cacheTtl = DEFAULT_GET_TTL,
     skipCache = false,
     method = "GET",
+    timeoutMs,
     _retry429 = 0,
     ...fetchOptions
   } = options;
@@ -210,7 +237,7 @@ export async function apiJson(path, options = {}) {
 
   let response;
   try {
-    response = await performFetch(url, { ...fetchOptions, method: httpMethod });
+    response = await performFetch(url, { ...fetchOptions, method: httpMethod, timeoutMs });
   } catch (err) {
     const isNetwork = err instanceof TypeError
       || String(err?.message || "").toLowerCase().includes("failed to fetch");

@@ -31,6 +31,7 @@ import {
   mapApiEmployee,
   storeEmployee,
   getStoredEmployee,
+  getStoredAuthUser,
   isMockEmployeeId,
   matchEmployeeFromList,
 } from "../lib/crmContext.js";
@@ -65,6 +66,18 @@ function readJsonStorage(key, fallback) {
 }
 
 function readBootstrappedEmployee() {
+  const authUser = getStoredAuthUser();
+  if (authUser?.role === "employee" && authUser.employeeId) {
+    return {
+      ...CURRENT_EMPLOYEE,
+      id: authUser.employeeId,
+      name: authUser.name || CURRENT_EMPLOYEE.name,
+      email: authUser.email || CURRENT_EMPLOYEE.email,
+      role: authUser.employeeRole || CURRENT_EMPLOYEE.role,
+      department: authUser.department || CURRENT_EMPLOYEE.department,
+    };
+  }
+
   const stored = getStoredEmployee();
   if (stored?.id && !isMockEmployeeId(stored.id, MOCK_EMPLOYEE_ID)) {
     return { ...CURRENT_EMPLOYEE, ...stored };

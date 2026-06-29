@@ -1,6 +1,60 @@
 /** Shared CRM tenant/user headers for admin + employee panels. */
 
 const EMPLOYEE_STORAGE_KEY = "crm_current_employee_v1";
+export const AUTH_TOKEN_KEY = "crm_auth_token_v1";
+export const AUTH_USER_KEY = "crm_auth_user_v1";
+
+export function getAuthToken() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function storeAuthToken(token) {
+  if (typeof window === "undefined" || !token) return;
+  try {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch {
+    // ignore
+  }
+}
+
+export function getStoredAuthUser() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(AUTH_USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function storeAuthUser(user) {
+  if (typeof window === "undefined" || !user) return;
+  try {
+    window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  } catch {
+    // ignore
+  }
+}
+
+export function clearAuthStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    window.localStorage.removeItem(AUTH_USER_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function getAuthHeaders() {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export function getStoredEmployee() {
   if (typeof window === "undefined") return null;
@@ -22,19 +76,26 @@ export function storeEmployee(employee) {
 }
 
 export function getCrmHeaders(role = "employee", employeeOverride = null) {
+  const authUser = getStoredAuthUser();
   const emp = employeeOverride || getStoredEmployee();
-  if (role === "admin") {
+  const headers = { ...getAuthHeaders() };
+
+  if (authUser?.role === "admin" || role === "admin") {
     return {
+      ...headers,
       "x-tenant-id": "default",
-      "x-user-id": "admin",
-      "x-user-name": "Admin",
+      "x-user-id": String(authUser?.id ?? "admin"),
+      "x-user-name": authUser?.name || "Admin",
       "x-user-role": "admin",
     };
   }
+
+  const employeeId = authUser?.employeeId || emp?.id || "";
   return {
+    ...headers,
     "x-tenant-id": "default",
-    "x-user-id": String(emp?.id ?? ""),
-    "x-user-name": emp?.name || "Employee",
+    "x-user-id": String(employeeId),
+    "x-user-name": authUser?.name || emp?.name || "Employee",
     "x-user-role": "employee",
   };
 }

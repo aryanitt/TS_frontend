@@ -2,9 +2,10 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CheckSquare, MessageSquare, Phone, Users, FileText,
-  Download, Calendar, ArrowLeftRight,
+  Download, Calendar, ArrowLeftRight, LogOut,
 } from "lucide-react";
 import { SidebarContext } from "../../context/SidebarContext.js";
+import { useAuth } from "../../context/AuthContext.jsx";
 import EmployeeDoodleAvatar from "./EmployeeDoodleAvatar.jsx";
 import EmployeePanelDoodleLogo from "./EmployeePanelDoodleLogo.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
@@ -35,6 +36,7 @@ const NAV = [
 export default function EmployeeSidebar({ open, onClose, collapsed, onToggleCollapse }) {
   const [hovered, setHovered] = useState(false);
   const { employee } = useEmployee();
+  const { logout } = useAuth();
   const navigate = useNavigate();
   const isExpanded = !collapsed || hovered;
 
@@ -83,6 +85,13 @@ export default function EmployeeSidebar({ open, onClose, collapsed, onToggleColl
             onClick={onClose}
             icon={ArrowLeftRight}
             label="Switch to Admin Panel"
+            isExpanded={isExpanded}
+          />
+          <SidebarSwitchLink
+            to="/login"
+            onClick={() => { logout(); onClose(); navigate("/login", { replace: true }); }}
+            icon={LogOut}
+            label="Sign out"
             isExpanded={isExpanded}
           />
           <SidebarProfileCard

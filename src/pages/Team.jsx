@@ -1479,6 +1479,151 @@ function AddDrawer({ open, onClose, onSave, members }) {
   );
 }
 
+function CredentialsModal({ open, credentials, memberName, onClose }) {
+  const copyText = (label, value) => {
+    if (!value) return;
+    navigator.clipboard.writeText(String(value));
+    toast.success(`${label} copied`);
+  };
+
+  const copyAll = () => {
+    if (!credentials) return;
+    const text = [
+      `Name: ${memberName || ""}`,
+      `Login ID: ${credentials.loginId}`,
+      `Email: ${credentials.email}`,
+      `Password: ${credentials.password}`,
+    ].join("\n");
+    navigator.clipboard.writeText(text);
+    toast.success("All credentials copied");
+  };
+
+  return (
+    <AnimatePresence>
+      {open && credentials && (
+        <motion.div
+          key="cred-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 70,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            background: "rgba(0,0,0,.75)",
+            backdropFilter: "blur(5px)",
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.92, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.92, opacity: 0 }}
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              borderRadius: 18,
+              padding: 22,
+              background: "#fff",
+              border: "1px solid #bbf7d0",
+            }}
+          >
+            <p style={{ fontWeight: 700, fontSize: 15, color: "#15803d", marginBottom: 4 }}>
+              Login credentials created
+            </p>
+            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
+              Share these with <strong>{memberName}</strong> once. The password will not be shown again.
+            </p>
+
+            {[
+              ["Login ID", credentials.loginId],
+              ["Email", credentials.email],
+              ["Password", credentials.password],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: 10, textTransform: "uppercase", color: "#94a3b8", letterSpacing: ".08em" }}>
+                    {label}
+                  </p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", wordBreak: "break-all" }}>{value}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyText(label, value)}
+                  style={{
+                    flexShrink: 0,
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    background: "#fff",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Copy
+                </button>
+              </div>
+            ))}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={copyAll}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#16a34a",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Copy all
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function DeleteModal({ open, emp, onConfirm, onCancel, busy }) {
   return (
     <AnimatePresence>
@@ -3149,6 +3294,8 @@ export default function Team() {
   const [deleteEmp, setDeleteEmp] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [newCredentials, setNewCredentials] = useState(null);
+  const [newMemberName, setNewMemberName] = useState("");
   const [kpiData, setKpiData] = useState(null);
 
   useEffect(() => {
@@ -3320,6 +3467,11 @@ export default function Team() {
     const normalized = normalizeEmployee(data.employee);
     setMembers((prev) => [normalized, ...prev]);
     fetchKPIs();
+
+    if (data.credentials) {
+      setNewMemberName(formFields.name);
+      setNewCredentials(data.credentials);
+    }
   };
 
   // ── save edit ───────────────────────────────────────────────────────────
@@ -3499,6 +3651,15 @@ export default function Team() {
         onConfirm={confirmDel}
         onCancel={() => setDeleteEmp(null)}
         busy={deleting}
+      />
+      <CredentialsModal
+        open={!!newCredentials}
+        credentials={newCredentials}
+        memberName={newMemberName}
+        onClose={() => {
+          setNewCredentials(null);
+          setNewMemberName("");
+        }}
       />
     </div>
   );
