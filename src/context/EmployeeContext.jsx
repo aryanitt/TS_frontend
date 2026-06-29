@@ -49,9 +49,6 @@ const EMPLOYEE_CACHE_TTL = 60_000;
 const EMPLOYEE_LIST_CACHE_TTL = 5 * 60 * 1000;
 const AVATAR_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b"];
 
-/** Survives React Strict Mode remount — prevents duplicate bootstrap wiping workspace state. */
-let employeeBootstrapPromise = null;
-
 function initialsFromName(name) {
   return name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }
@@ -135,7 +132,8 @@ export function EmployeeProvider({ children }) {
     return matched.id;
   }, [employee, teamEmployees]);
 
-  const loadEmployeeWorkspace = useCallback(async (empId, empProfile) => {
+  const loadEmployeeWorkspace = useCallback(async (empId, empProfile, options = {}) => {
+    const { forceRefresh = false } = options;
     try {
       let resolvedId = empId;
       if (isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
@@ -143,8 +141,8 @@ export function EmployeeProvider({ children }) {
       }
       const res = await apiGet(`/api/v1/employee/${resolvedId}/dashboard`, {
         headers: getCrmHeaders("employee", empProfile),
-        cacheTtl: EMPLOYEE_CACHE_TTL,
-        skipCache: isMockEmployeeId(empId, MOCK_EMPLOYEE_ID),
+        cacheTtl: forceRefresh ? 0 : EMPLOYEE_CACHE_TTL,
+        skipCache: forceRefresh || isMockEmployeeId(empId, MOCK_EMPLOYEE_ID),
       });
       if (res?.success === false) {
         throw new Error(res.message || "Dashboard API failed");
@@ -861,86 +859,85 @@ export function EmployeeProvider({ children }) {
 
     async function bootstrap() {
       setLoading(true);
-      const stored = getStoredEmployee();
-      const seedProfile = stored?.id && !isMockEmployeeId(stored.id, MOCK_EMPLOYEE_ID)
-        ? { ...CURRENT_EMPLOYEE, ...stored }
-        : { ...CURRENT_EMPLOYEE };
-
       try {
-        const empRes = await apiGet("/api/v1/employees", {
-          headers: getCrmHeaders("employee", seedProfile),
-          cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
-          skipCache: isMockEmployeeId(seedProfile.id, MOCK_EMPLOYEE_ID),
-        });
-        if (empRes?.success === false) {
-          throw new Error(empRes.message || "Employees API failed");
-        }
-        const employees = unwrapApiData(empRes);
-        const list = Array.isArray(employees) ? employees : [];
-        if (list.length && !cancelled) {
-          setTeamEmployees(list.map((e) => mapApiEmployee(e)));
-        }
-        const matched = matchEmployeeFromList(list, seedProfile, MOCK_EMPLOYEE_ID);
-        if (matched && !cancelled) {
-          const mapped = { ...CURRENT_EMPLOYEE, ...mapApiEmployee(matched) };
-          setEmployee(mapped);
-          storeEmployee(mapped);
-          setUsingApi(true);
+        const stored = getStoredEmployee();
+        const seedProfile = stored?.id && !isMockEmployeeId(stored.id, MOCK_EMPLOYEE_ID)
+          ? { ...CURRENT_EMPLOYEE, ...stored }
+          : { ...CURRENT_EMPLOYEE };
 
-          const loaded = await loadEmployeeWorkspace(mapped.id, mapped);
-          if (!loaded) {
-            await refreshLeads(mapped.id, mapped);
+        try {
+          const empRes = await apiGet("/api/v1/employees", {
+            headers: getCrmHeaders("employee", seedProfile),
+            cacheTtl: EMPLOYEE_LIST_CACHE_TTL,
+            skipCache: true,
+          });
+          if (cancelled) return;
+          if (empRes?.success === false) {
+            throw new Error(empRes.message || "Employees API failed");
           }
-          await refreshTasks(mapped.id, mapped);
+          const employees = unwrapApiData(empRes);
+          const list = Array.isArray(employees) ? employees : [];
+          if (list.length && !cancelled) {
+            setTeamEmployees(list.map((e) => mapApiEmployee(e)));
+          }
+          const matched = matchEmployeeFromList(list, seedProfile, MOCK_EMPLOYEE_ID);
+          if (matched && !cancelled) {
+            const mapped = { ...CURRENT_EMPLOYEE, ...mapApiEmployee(matched) };
+            setEmployee(mapped);
+            storeEmployee(mapped);
+            setUsingApi(true);
+
+            const loaded = await loadEmployeeWorkspace(mapped.id, mapped, { forceRefresh: true });
+            if (cancelled) return;
+            if (!loaded) {
+              await refreshLeads(mapped.id, mapped);
+            }
+            if (cancelled) return;
+            await refreshTasks(mapped.id, mapped);
+            try {
+              await refreshSops();
+            } catch {
+              /* SOPs optional */
+            }
+            return;
+          }
+        } catch {
+          /* retry workspace load with resolver below */
+        }
+
+        if (!cancelled) {
+          const persisted = getStoredEmployee();
+          const fallbackProfile = persisted?.id && !isMockEmployeeId(persisted.id, MOCK_EMPLOYEE_ID)
+            ? { ...CURRENT_EMPLOYEE, ...persisted }
+            : seedProfile;
+
+          setEmployee((prev) => (
+            !isMockEmployeeId(prev?.id, MOCK_EMPLOYEE_ID) ? prev : fallbackProfile
+          ));
+          setUsingApi(true);
+          try {
+            const loaded = await loadEmployeeWorkspace(fallbackProfile.id, fallbackProfile, { forceRefresh: true });
+            if (cancelled) return;
+            if (!loaded) {
+              await refreshLeads(fallbackProfile.id, fallbackProfile);
+            }
+            if (cancelled) return;
+            await refreshTasks(fallbackProfile.id, fallbackProfile);
+          } catch {
+            /* show empty workspace until API recovers */
+          }
           try {
             await refreshSops();
           } catch {
             /* SOPs optional */
           }
-          return;
         }
-      } catch {
-        /* retry workspace load with resolver below */
-      }
-
-      if (!cancelled) {
-        const persisted = getStoredEmployee();
-        const fallbackProfile = persisted?.id && !isMockEmployeeId(persisted.id, MOCK_EMPLOYEE_ID)
-          ? { ...CURRENT_EMPLOYEE, ...persisted }
-          : seedProfile;
-
-        setEmployee((prev) => (
-          !isMockEmployeeId(prev?.id, MOCK_EMPLOYEE_ID) ? prev : fallbackProfile
-        ));
-        setUsingApi(true);
-        try {
-          const loaded = await loadEmployeeWorkspace(fallbackProfile.id, fallbackProfile);
-          if (!loaded) {
-            await refreshLeads(fallbackProfile.id, fallbackProfile);
-          }
-          await refreshTasks(fallbackProfile.id, fallbackProfile);
-        } catch {
-          /* show empty workspace until API recovers */
-        }
-        try {
-          await refreshSops();
-        } catch {
-          /* SOPs optional */
-        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
 
-    if (!employeeBootstrapPromise) {
-      employeeBootstrapPromise = bootstrap().catch((err) => {
-        employeeBootstrapPromise = null;
-        throw err;
-      });
-    }
-
-    employeeBootstrapPromise.finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-
+    bootstrap();
     return () => { cancelled = true; };
     // Bootstrap once per page load; workspace loaders are stable enough for initial hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
