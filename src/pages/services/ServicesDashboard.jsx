@@ -17,6 +17,7 @@ import {
 } from "../../data/servicesMock.js";
 import { apiGet, apiPost, invalidateCache } from "../../lib/api.js";
 import { formatIndianNumber } from "../../lib/indianFormat.js";
+import AddServiceDrawer from "./AddServiceDrawer.jsx";
 
 const ICON_MAP = {
   bot: Bot,
@@ -25,6 +26,23 @@ const ICON_MAP = {
   briefcase: Briefcase,
   code: Code,
 };
+
+function normalizeCatalogService(service) {
+  return {
+    badge: "ACTIVE",
+    clients: 0,
+    tags: [],
+    icon: "bot",
+    priceNum: 0,
+    price: "",
+    ...service,
+    tags: Array.isArray(service?.tags) ? service.tags : [],
+    clients: Number(service?.clients) || 0,
+    priceNum: Number(service?.priceNum) || 0,
+    badge: service?.badge || "ACTIVE",
+    icon: service?.icon || "bot",
+  };
+}
 
 function ChartCardHeader({ title, subtitle }) {
   return (
@@ -37,7 +55,7 @@ function ChartCardHeader({ title, subtitle }) {
 
 export default function ServicesDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [catalog, setCatalog] = useState(getAllServices);
+  const [catalog, setCatalog] = useState(() => getAllServices());
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
@@ -48,7 +66,9 @@ export default function ServicesDashboard() {
     (async () => {
       try {
         const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
-        if (data.services?.length) setCatalog(data.services);
+        if (data.services?.length) {
+          setCatalog(data.services.map(normalizeCatalogService));
+        }
       } catch {
         // keep getAllServices mock
       }
@@ -85,7 +105,7 @@ export default function ServicesDashboard() {
         await apiPost("/api/services", newService);
         invalidateCache("/api/services");
         const data = await apiGet("/api/services", { skipCache: true, cacheTtl: 0 });
-        if (data.services?.length) setCatalog(data.services);
+        if (data.services?.length) setCatalog(data.services.map(normalizeCatalogService));
         else {
           registerService(newService);
           setCatalog(getAllServices());

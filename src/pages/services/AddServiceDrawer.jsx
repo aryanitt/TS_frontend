@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Drawer } from "../../components/Primitives.jsx";
 import { formatServicePriceLabel } from "../../lib/indianFormat.js";
+import { SERVICE_CATEGORIES } from "../../data/servicesMock.js";
 
 const CATEGORY_OPTIONS = SERVICE_CATEGORIES.filter((c) => c.id !== "all");
 
