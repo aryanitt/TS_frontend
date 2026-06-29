@@ -266,6 +266,7 @@ AI Insights & Follow-up Actions:
       type: "out",
       date: "Today " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
       period: "today",
+      callAt: new Date().toISOString(),
       outcome: callOutcome,
       hasRec: true,
       rating: callRating,

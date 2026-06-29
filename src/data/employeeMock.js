@@ -112,11 +112,48 @@ export function buildSourceChartFromLeads(leads = []) {
     }));
 }
 
+export function getEmpAppToday() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function callAtTimestamp(call) {
+  const raw = call?.callAt || call?.startedAt || call?.createdAt;
+  if (!raw) return null;
+  const ts = new Date(raw).getTime();
+  return Number.isNaN(ts) ? null : ts;
+}
+
+/** True when a call falls in today / rolling 7 days / current calendar month. */
+export function isCallInPeriod(call, period = "today") {
+  const ts = callAtTimestamp(call);
+  if (ts == null) {
+    if (period === "today") return call?.period === "today";
+    if (period === "week") return call?.period === "today" || call?.period === "week";
+    return call?.period === "today" || call?.period === "week" || call?.period === "month";
+  }
+
+  const callDate = new Date(ts);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const callDayStart = new Date(callDate.getFullYear(), callDate.getMonth(), callDate.getDate());
+  const diffDays = Math.floor((todayStart - callDayStart) / 86400000);
+
+  if (period === "today") return diffDays === 0;
+  if (period === "week") return diffDays >= 0 && diffDays <= 6;
+  if (period === "month") {
+    return callDate.getFullYear() === now.getFullYear()
+      && callDate.getMonth() === now.getMonth();
+  }
+  return true;
+}
+
 export function filterCallsForPeriod(calls, period) {
   const list = Array.isArray(calls) ? calls : [];
-  if (period === "today") return list.filter((c) => c.period === "today");
-  if (period === "week") return list.filter((c) => c.period === "today" || c.period === "week");
-  return list;
+  return list.filter((c) => isCallInPeriod(c, period));
 }
 
 export function computeCallStatsFromCalls(calls, period = "today") {
@@ -977,6 +1014,8 @@ export function callFromApi(apiCall, leads = []) {
     type: dir,
     date: dateLabel,
     period,
+    callAt: created,
+    startedAt: apiCall.startedAt || apiCall.createdAt,
     outcome: apiCall.outcome || "Call logged",
     hasRec: Boolean(apiCall.recordingUrl) || Boolean(apiCall.aiSummary || apiCall.notes),
     rating: 0,
