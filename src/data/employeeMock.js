@@ -112,43 +112,76 @@ export function buildSourceChartFromLeads(leads = []) {
     }));
 }
 
-export function getEmpAppToday() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-function callAtTimestamp(call) {
-  const raw = call?.callAt || call?.startedAt || call?.createdAt;
-  if (!raw) return null;
-  const ts = new Date(raw).getTime();
-  return Number.isNaN(ts) ? null : ts;
+function weekStartLocal(now = new Date()) {
+  const s = new Date(now);
+  s.setHours(0, 0, 0, 0);
+  s.setDate(s.getDate() - s.getDay());
+  return s;
 }
 
-/** True when a call falls in today / rolling 7 days / current calendar month. */
-export function isCallInPeriod(call, period = "today") {
-  const ts = callAtTimestamp(call);
-  if (ts == null) {
-    if (period === "today") return call?.period === "today";
-    if (period === "week") return call?.period === "today" || call?.period === "week";
-    return call?.period === "today" || call?.period === "week" || call?.period === "month";
+function parseCallDisplayDate(dateStr) {
+  const s = String(dateStr || "").trim();
+  if (!s) return null;
+  if (/^today/i.test(s)) return getEmpAppToday();
+  if (/^yesterday/i.test(s)) {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return localDateKey(d);
   }
-
-  const callDate = new Date(ts);
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const callDayStart = new Date(callDate.getFullYear(), callDate.getMonth(), callDate.getDate());
-  const diffDays = Math.floor((todayStart - callDayStart) / 86400000);
-
-  if (period === "today") return diffDays === 0;
-  if (period === "week") return diffDays >= 0 && diffDays <= 6;
-  if (period === "month") {
-    return callDate.getFullYear() === now.getFullYear()
-      && callDate.getMonth() === now.getMonth();
+  const daysAgo = s.match(/^(\d+)\s+days?\s+ago/i);
+  if (daysAgo) {
+    const d = new Date();
+    d.setDate(d.getDate() - Number(daysAgo[1]));
+    return localDateKey(d);
   }
-  return true;
+  const year = new Date().getFullYear();
+  const attempts = [
+    s,
+    `${s}, ${year}`,
+    s.replace(/^(\d{1,2}\s+\w+),?\s+/, `$1 ${year} `),
+    s.replace(/^(\w+\s+\d{1,2}),?\s+/, `$1, ${year} `),
+  ];
+  for (const attempt of attempts) {
+    const d = new Date(attempt);
+    if (!Number.isNaN(d.getTime())) return localDateKey(d);
+  }
+  return null;
+}
+
+/** Resolve a call's local calendar day (YYYY-MM-DD) for period filters. */
+export function getCallDateKey(call) {
+  if (!call || typeof call !== "object") return null;
+  if (call.callDay) return call.callDay;
+  for (const raw of [call.callAt, call.startedAt, call.createdAt, call.endedAt]) {
+    if (!raw) continue;
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return localDateKey(d);
+  }
+  return parseCallDisplayDate(call.date);
+}
+
+export function isCallInPeriod(call, period, now = new Date()) {
+  const key = getCallDateKey(call);
+  if (!key) {
+    if (period === "today") return call.period === "today";
+    if (period === "week") return call.period === "today" || call.period === "week";
+    return true;
+  }
+  const today = localDateKey(now);
+  if (period === "today") return key === today;
+  if (period === "week") {
+    const weekStart = localDateKey(weekStartLocal(now));
+    return key >= weekStart && key <= today;
+  }
+  const monthStart = localDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
+  return key >= monthStart && key <= today;
 }
 
 export function filterCallsForPeriod(calls, period) {
@@ -817,13 +850,6 @@ export function priorityFromApi(priority) {
   return "med";
 }
 
-function localDateKey(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 export function tasksMapFromApi(apiTasks, employee) {
   const map = {};
   if (!Array.isArray(apiTasks)) return map;
@@ -989,13 +1015,13 @@ export function callFromApi(apiCall, leads = []) {
   const today = getEmpAppToday();
   const callDay = Number.isNaN(createdDate.getTime())
     ? today
-    : createdDate.toISOString().slice(0, 10);
+    : localDateKey(createdDate);
 
   let period = "month";
   if (callDay === today) {
     period = "today";
   } else {
-    const diff = (new Date(`${today}T00:00:00`) - new Date(`${callDay}T00:00:00`)) / 86400000;
+    const diff = (new Date(`${today}T12:00:00`) - new Date(`${callDay}T12:00:00`)) / 86400000;
     if (diff >= 0 && diff <= 7) period = "week";
   }
 
@@ -1013,9 +1039,9 @@ export function callFromApi(apiCall, leads = []) {
     duration: formatDurationFromSeconds(apiCall.durationSec),
     type: dir,
     date: dateLabel,
+    callAt: created || createdDate.toISOString(),
+    callDay,
     period,
-    callAt: created,
-    startedAt: apiCall.startedAt || apiCall.createdAt,
     outcome: apiCall.outcome || "Call logged",
     hasRec: Boolean(apiCall.recordingUrl) || Boolean(apiCall.aiSummary || apiCall.notes),
     rating: 0,

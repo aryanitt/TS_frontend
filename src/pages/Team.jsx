@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { Maximize2 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { apiGet, apiPost, apiDelete, invalidateCache } from "../lib/api.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
@@ -3683,7 +3683,6 @@ export default function Team() {
 
   return (
     <div className="page-shell min-w-0" style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-      <Toaster position="top-right" />
 
       {/* ── KPI grid — Dashboard-style cards ── */}
       <div>

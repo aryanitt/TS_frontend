@@ -4,7 +4,7 @@ import {
   AlertTriangle, RefreshCw, Users,
 } from "lucide-react";
 import { Badge } from "../components/Primitives.jsx";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import AdminProfileHeader, { DashboardScrollbarStyles } from "../components/AdminProfileHeader.jsx";
 import { SettingsSidebar, SettingsMobileTabs, SettingsPanel, PanelFooter } from "../components/SettingsLayout.jsx";
 import { CustomSelect, EmployeeListPicker, colorForName } from "../components/CustomSelect.jsx";
@@ -224,7 +224,6 @@ export default function Settings() {
 
   return (
     <div className="space-y-4 sm:space-y-6 page-shell min-w-0">
-      <Toaster position="top-right" />
       <DashboardScrollbarStyles />
       <AdminProfileHeader />
 

@@ -209,20 +209,9 @@ export default function EmployeeCalls() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const period = searchParams.get("period") || "today";
-  const { calls: contextCalls = [], employee, refreshCalls } = useEmployee();
+  const { calls: contextCalls = [], employee } = useEmployee();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [callsLoading, setCallsLoading] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setCallsLoading(true);
-      await refreshCalls();
-      if (!cancelled) setCallsLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [refreshCalls]);
 
   const stats = useMemo(
     () => computeCallStatsFromCalls(contextCalls, period),
@@ -329,9 +318,7 @@ export default function EmployeeCalls() {
               {calls.length}
             </span>
           </div>
-          {callsLoading ? (
-            <div className="py-10 text-center text-sm text-slate-400">Loading call history…</div>
-          ) : calls.length === 0 ? (
+          {calls.length === 0 ? (
             <EmpEmptyState icon="📞" title="No calls in this period" subtitle="Try a different filter or time range" />
           ) : (
             <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-4 max-h-none sm:max-h-[640px] sm:overflow-y-auto sm:overscroll-contain sm:scrollbar-thin sm:pr-1">

@@ -308,31 +308,6 @@ export function EmployeeProvider({ children }) {
     }
   }, [employee, resolveApiEmployeeId]);
 
-  const refreshCalls = useCallback(async (empId = employee.id, empProfile = employee, leadList = leads) => {
-    try {
-      const authEmployeeId = getAuthenticatedEmployeeId();
-      let resolvedId = authEmployeeId || empId;
-      if (!authEmployeeId && isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
-        resolvedId = await resolveApiEmployeeId(empId, empProfile);
-      }
-      const callsPath = employeeResourcePath(resolvedId, "calls");
-      if (!callsPath) return false;
-      const res = await apiGet(callsPath, {
-        headers: getCrmHeaders("employee", empProfile),
-        cacheTtl: EMPLOYEE_CACHE_TTL,
-        skipCache: true,
-      });
-      const items = unwrapApiList(res);
-      if (!items) return false;
-      const mapped = items.map((c) => callFromApi(c, leadList));
-      setCalls(() => listUpdaterForSession()([], mapped));
-      setUsingApi(true);
-      return true;
-    } catch {
-      return false;
-    }
-  }, [employee, leads, resolveApiEmployeeId]);
-
   const refreshTasks = useCallback(async (empId = employee.id, empProfile = employee) => {
     try {
       let resolvedId = empId;
@@ -566,14 +541,13 @@ export function EmployeeProvider({ children }) {
       }
 
       invalidateCache("/api/v1");
-      await refreshCalls(employee.id, employee, leads);
       return mapped;
     } catch (err) {
       setCalls((prev) => prev.filter((c) => c.id !== tempId));
       toast.error(err.message || "Could not save call to server");
       return null;
     }
-  }, [usingApi, employee, leads, resolveApiEmployeeId, refreshCalls]);
+  }, [usingApi, employee, leads, resolveApiEmployeeId]);
 
   const addActivityRecord = useCallback((leadId, newEvent) => {
     setActivities((prev) => {
@@ -1239,7 +1213,6 @@ export function EmployeeProvider({ children }) {
     calls,
     setCalls,
     addCallRecord,
-    refreshCalls,
     activities,
     addActivityRecord,
     sops,
@@ -1258,7 +1231,7 @@ export function EmployeeProvider({ children }) {
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
     syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, refreshLeads,
     reassignLead, teamEmployees, refreshTeamEmployees,
-    usingApi, calls, addCallRecord, refreshCalls, activities, addActivityRecord, sops, refreshSops,
+    usingApi, calls, addCallRecord, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
     workspaceError, reloadWorkspace,
   ]);

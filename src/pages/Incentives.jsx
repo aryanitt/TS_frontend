@@ -14,7 +14,7 @@ import {
   timeAgoShort,
 } from "../data/pipelineMock.js";
 import { useIsMobile } from "../hooks/use-mobile.tsx";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { apiGet } from "../lib/api.js";
 import { CustomSelect } from "../components/CustomSelect.jsx";
 
@@ -768,7 +768,6 @@ export default function Incentives() {
 
   return (
     <div className="space-y-4 page-shell min-w-0">
-      <Toaster position="top-right" />
 
       <GlassCard className="p-2.5 sm:p-4">
         <div className="flex flex-col gap-2.5 sm:gap-4 lg:flex-row lg:items-end lg:justify-between min-w-0">
