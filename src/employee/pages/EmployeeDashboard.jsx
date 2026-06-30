@@ -156,14 +156,14 @@ export default function EmployeeDashboard() {
     return leads.filter((l) => l.status === pipeFilter);
   }, [pipeFilter, leads]);
 
-  const pendingAgenda = agenda.filter((a, i) => !agendaDone[i]).length;
+  const pendingAgenda = agenda.filter((a) => !agendaDone[a.id]).length;
   const pipelineTotal = pipeline.reduce((s, p) => s + p.count, 0);
   const convertedCount = pipeline.find((p) => p.label === "Converted")?.count ?? 0;
   const convRate = pipelineTotal ? `${Math.round((convertedCount / pipelineTotal) * 100)}%` : "—";
 
-  const markAgendaDone = (idx) => {
-    setAgendaDone((prev) => ({ ...prev, [idx]: true }));
-    toast.success("Marked done");
+  const markAgendaDone = (itemId) => {
+    setAgendaDone((prev) => ({ ...prev, [itemId]: true }));
+    toast.success("Marked complete");
   };
 
   const dateLabel = new Date().toLocaleDateString("en-IN", {
@@ -497,11 +497,11 @@ export default function EmployeeDashboard() {
             <div className={`space-y-1.5 sm:space-y-2 ${isMobile ? "max-h-[240px]" : "max-h-[340px]"} overflow-y-auto pr-0.5`}>
               {agenda.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-6">Nothing scheduled for today</p>
-              ) : agenda.map((a, i) => {
-                const done = Boolean(agendaDone[i]);
+              ) : agenda.map((a) => {
+                const done = Boolean(agendaDone[a.id]);
                 return (
                 <div
-                  key={a.time + a.title + i}
+                  key={a.id}
                   className={`rounded-lg sm:rounded-xl border p-2.5 sm:p-3 transition ${
                     done
                       ? "border-slate-100 bg-slate-50/50 opacity-60"
@@ -514,21 +514,32 @@ export default function EmployeeDashboard() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
                         <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 tabular-nums">{a.time}</span>
+                        {a.kind === "meeting" && !done && <Badge tone="info">Scheduled</Badge>}
                         {a.hot && !done && <Badge tone="danger">Hot</Badge>}
-                        {done && <Badge tone="success">Done</Badge>}
+                        {done && <Badge tone="success">Completed</Badge>}
                       </div>
                       <p className={`text-[11px] sm:text-xs font-bold mt-0.5 sm:mt-1 leading-snug ${done ? "line-through text-slate-400" : "text-slate-900"}`}>
                         {a.title}
                       </p>
                       <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 line-clamp-1">{a.sub}</p>
                     </div>
-                    {!done && (
+                    {!done && a.kind === "meeting" && a.meetLink && (
+                      <a
+                        href={a.meetLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 text-[9px] sm:text-[10px] font-semibold text-rose-700 bg-rose-50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg border border-rose-100 hover:bg-rose-100 transition"
+                      >
+                        Join
+                      </a>
+                    )}
+                    {!done && a.kind !== "meeting" && (
                       <button
                         type="button"
-                        onClick={() => markAgendaDone(i)}
-                        className="shrink-0 text-[9px] sm:text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg border border-emerald-100 hover:bg-emerald-100 transition"
+                        onClick={() => markAgendaDone(a.id)}
+                        className="shrink-0 text-[9px] sm:text-[10px] font-semibold text-slate-600 bg-slate-50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg border border-slate-200 hover:bg-slate-100 transition"
                       >
-                        Done
+                        Mark done
                       </button>
                     )}
                   </div>

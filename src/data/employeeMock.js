@@ -249,42 +249,84 @@ export function buildDashboardAgenda({ meetingsUpcoming = [], tasks = {}, follow
   const pendingFollowUps = Array.isArray(followUps) ? followUps : [];
   const taskMap = tasks && typeof tasks === "object" ? tasks : {};
 
+  const formatMeetingTime = (meeting) => {
+    if (meeting.scheduledAt) {
+      const d = new Date(meeting.scheduledAt);
+      if (!Number.isNaN(d.getTime())) {
+        return d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+      }
+    }
+    const timeMatch = String(meeting.time || "").match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/i);
+    return timeMatch ? timeMatch[1] : "—";
+  };
+
+  const isMeetingToday = (meeting) => {
+    if (meeting.date === today) return true;
+    if (String(meeting.time || "").toLowerCase().startsWith("today")) return true;
+    if (meeting.scheduledAt) {
+      const d = new Date(meeting.scheduledAt);
+      if (!Number.isNaN(d.getTime()) && localDateKey(d) === today) return true;
+    }
+    return false;
+  };
+
   for (const m of meetings) {
-    if (m.date !== today && !String(m.time || "").startsWith("Today")) continue;
-    const timeMatch = String(m.time || "").match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?|\d{1,2}:\d{2})/i);
+    if (m.status === "cancelled" || m.status === "completed") continue;
+    if (!isMeetingToday(m)) continue;
     items.push({
-      time: timeMatch ? timeMatch[1] : "—",
+      id: `meeting-${m.id}`,
+      kind: "meeting",
+      time: formatMeetingTime(m),
+      sortAt: m.scheduledAt ? new Date(m.scheduledAt).getTime() : Number.MAX_SAFE_INTEGER,
       title: `Meeting: ${m.lead || m.title}`,
       sub: m.company || m.agenda || "",
       hot: false,
-      done: false,
+      meetLink: m.meetLink || "",
     });
   }
 
   const todayTasks = taskMap[today] || [];
   for (const t of todayTasks) {
-    if (t.status === "done" || t.status === "completed") continue;
+    if (t.done || t.status === "done" || t.status === "completed") continue;
     items.push({
-      time: t.deadlineTime || t.time || "—",
+      id: `task-${t.id}`,
+      kind: "task",
+      time: t.deadline || t.deadlineTime || t.time || "—",
+      sortAt: parseAgendaSortTime(t.deadline || t.deadlineTime || t.time),
       title: t.name || t.title || "Task",
       sub: t.leadName || t.note || "",
       hot: t.priority === "high" || t.priority === "urgent",
-      done: false,
     });
   }
 
   for (const f of pendingFollowUps) {
     if (f.done) continue;
+    if (f.date && f.date !== today && f.urgency !== "today" && f.urgency !== "overdue") continue;
     items.push({
+      id: `followup-${f.id}`,
+      kind: "followup",
       time: f.time || "—",
+      sortAt: parseAgendaSortTime(f.time),
       title: `${f.type || "Follow-up"}: ${f.name}`,
       sub: f.company || f.note || "",
       hot: f.urgency === "overdue" || f.urgency === "today",
-      done: false,
     });
   }
 
-  return items;
+  return items.sort((a, b) => (a.sortAt || 0) - (b.sortAt || 0));
+}
+
+function parseAgendaSortTime(raw) {
+  const s = String(raw || "").trim();
+  if (!s || s === "—") return Number.MAX_SAFE_INTEGER;
+  const match = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const meridiem = (match[3] || "").toLowerCase();
+  if (meridiem === "pm" && hours < 12) hours += 12;
+  if (meridiem === "am" && hours === 12) hours = 0;
+  return hours * 60 + minutes;
 }
 
 export const EMP_PIPELINE = [
@@ -557,7 +599,7 @@ export function meetingFromApi(apiMeeting, leads = []) {
   const today = getEmpAppToday();
   const schedDay = Number.isNaN(scheduled.getTime())
     ? today
-    : scheduled.toISOString().slice(0, 10);
+    : localDateKey(scheduled);
   const clock24 = Number.isNaN(scheduled.getTime())
     ? "09:00"
     : `${String(scheduled.getHours()).padStart(2, "0")}:${String(scheduled.getMinutes()).padStart(2, "0")}`;
@@ -567,7 +609,7 @@ export function meetingFromApi(apiMeeting, leads = []) {
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const tomorrowStr = localDateKey(tomorrow);
 
   let time;
   if (schedDay === today) time = `Today, ${clock12}`;
