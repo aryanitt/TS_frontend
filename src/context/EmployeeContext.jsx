@@ -46,6 +46,7 @@ import {
   unwrapApiList,
   mergeFetchedList,
   replaceFetchedList,
+  unwrapWorkspacePayload,
 } from "../lib/leadSync.js";
 
 const EmployeeContext = createContext(null);
@@ -212,7 +213,10 @@ export function EmployeeProvider({ children }) {
       if (res?.success === false) {
         throw new Error(res.message || "Dashboard API failed");
       }
-      const data = unwrapApiData(res) || res.data || res;
+      const data = unwrapWorkspacePayload(res);
+      if (!data) {
+        throw new Error("Dashboard API returned an invalid payload");
+      }
       const scopeId = authEmployeeId || resolvedId;
       const workspaceLeads = Array.isArray(data.leads)
         ? filterLeadsForEmployee(
@@ -985,17 +989,18 @@ export function EmployeeProvider({ children }) {
 
         if (authProfile) {
           const stored = getStoredEmployee();
-          if (stored?.id && Number(stored.id) !== Number(authProfile.id)) {
+          const employeeChanged = stored?.id && Number(stored.id) !== Number(authProfile.id);
+          if (employeeChanged) {
             clearEmployeeStorage();
+            setLeads([]);
+            setTasksState({});
+            setFollowUpsState([]);
+            setCalls([]);
+            setMeetingsUpcoming([]);
+            setMeetingsHistory([]);
+            setActivities({});
           }
 
-          setLeads([]);
-          setTasksState({});
-          setFollowUpsState([]);
-          setCalls([]);
-          setMeetingsUpcoming([]);
-          setMeetingsHistory([]);
-          setActivities({});
           invalidateCache("/api/v1/employee/");
           setWorkspaceError(null);
 

@@ -60,9 +60,21 @@ export function unwrapApiList(res) {
   return null;
 }
 
+/** Extract employee workspace/dashboard payload from API envelopes. */
+export function unwrapWorkspacePayload(res) {
+  if (!res || typeof res !== "object") return null;
+  if (res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
+    return res.data;
+  }
+  if (Array.isArray(res.leads) || res.employee || res.tasks || res.calls) {
+    return res;
+  }
+  return null;
+}
+
 /** Replace list on fetch — used for per-employee workspace (no cross-user merge). */
-export function replaceFetchedList(_prev, next) {
-  if (!Array.isArray(next)) return [];
+export function replaceFetchedList(prev, next) {
+  if (!Array.isArray(next)) return Array.isArray(prev) ? prev : [];
   return next;
 }
 
