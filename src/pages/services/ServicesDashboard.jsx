@@ -27,8 +27,8 @@ const ICON_MAP = {
   code: Code,
 };
 
-function normalizeCatalogService(service) {
-  return {
+function normalizeCatalogService(service = {}) {
+  const merged = {
     badge: "ACTIVE",
     clients: 0,
     tags: [],
@@ -36,11 +36,14 @@ function normalizeCatalogService(service) {
     priceNum: 0,
     price: "",
     ...service,
-    tags: Array.isArray(service?.tags) ? service.tags : [],
-    clients: Number(service?.clients) || 0,
-    priceNum: Number(service?.priceNum) || 0,
-    badge: service?.badge || "ACTIVE",
-    icon: service?.icon || "bot",
+  };
+  return {
+    ...merged,
+    tags: Array.isArray(merged.tags) ? merged.tags : [],
+    clients: Number(merged.clients) || 0,
+    priceNum: Number(merged.priceNum) || 0,
+    badge: merged.badge || "ACTIVE",
+    icon: merged.icon || "bot",
   };
 }
 
