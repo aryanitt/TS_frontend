@@ -392,6 +392,15 @@ export async function apiPost(path, body, options = {}) {
   });
 }
 
+export async function apiPostForm(path, formData, options = {}) {
+  return apiJson(path, {
+    ...options,
+    method: "POST",
+    body: formData,
+    cacheTtl: 0,
+  });
+}
+
 export async function apiPut(path, body, options = {}) {
   return apiJson(path, {
     ...options,

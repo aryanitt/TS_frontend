@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { Maximize2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiGet, apiPost, apiDelete, invalidateCache } from "../lib/api.js";
+import { formatCashINR, formatCashDateTime, resolveSlipUrl } from "../components/CashCollectedPanel.jsx";
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
 // ─── inject global styles ────────────────────────────────────────────────────
@@ -431,6 +432,7 @@ function useEmployeeDetails(emp) {
       ...normalized,
       stats: detail?.stats || null,
       achieved: detail?.achieved || null,
+      cashCollections: detail?.cashCollections || [],
       responseTimeMin: perf.responseTimeMin,
       pickupRate: perf.pickupRate,
       qualificationRate: perf.qualificationRate,
@@ -2639,6 +2641,77 @@ function EmpDetail({ emp, onEdit, onDelete }) {
         </div>
           );
         })()}
+      </GlassCard>
+
+      {/* ── Cash Collections (all payments recorded by this employee) ── */}
+      <GlassCard className={compact ? "p-3" : "p-5"}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: compact ? 8 : 12, flexWrap: "wrap" }}>
+          <div>
+            <h3 style={{ fontSize: compact ? 11 : 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", color: "#047857", margin: 0 }}>
+              Cash Collected
+            </h3>
+            <p style={{ fontSize: compact ? 10 : 11, color: "#64748b", margin: "3px 0 0", lineHeight: 1.3 }}>
+              All payments recorded under {activeEmp.name}
+            </p>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <p style={{ fontSize: 9, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".06em", margin: 0 }}>Total</p>
+            <p style={{ fontSize: compact ? 16 : 20, fontWeight: 900, color: "#047857", margin: "2px 0 0", fontVariantNumeric: "tabular-nums" }}>
+              {formatCashINR(activeEmp.achieved?.cash ?? cashA ?? 0)}
+            </p>
+          </div>
+        </div>
+
+        {!activeEmp.cashCollections?.length ? (
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: 0, padding: compact ? "8px 0" : "12px 0" }}>
+            No cash payments recorded yet. Record payments from any lead drawer under this employee.
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: compact ? 10 : 11.5 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #d1fae5", color: "#047857", textTransform: "uppercase", letterSpacing: ".04em", fontSize: compact ? 8.5 : 9.5 }}>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Lead</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Amount</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Mode</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Date & Time</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", fontWeight: 800 }}>Txn / Slip</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeEmp.cashCollections.map((row) => (
+                  <tr key={row.id} style={{ borderBottom: "1px solid #ecfdf5" }}>
+                    <td style={{ padding: "10px 6px", minWidth: 120 }}>
+                      <p style={{ margin: 0, fontWeight: 700, color: "#1e293b" }}>{row.leadName || "Lead"}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 10, color: "#94a3b8" }}>{row.companyName || "—"}</p>
+                    </td>
+                    <td style={{ padding: "10px 6px", fontWeight: 800, color: "#047857", fontVariantNumeric: "tabular-nums" }}>
+                      {formatCashINR(row.amount)}
+                    </td>
+                    <td style={{ padding: "10px 6px", color: "#334155", fontWeight: 600 }}>{row.paymentMode}</td>
+                    <td style={{ padding: "10px 6px", color: "#64748b", whiteSpace: "nowrap" }}>{formatCashDateTime(row.paymentAt)}</td>
+                    <td style={{ padding: "10px 6px" }}>
+                      {row.transactionId ? (
+                        <span style={{ fontSize: 10, fontWeight: 600, color: "#475569" }}>{row.transactionId}</span>
+                      ) : row.slipUrl ? (
+                        <a
+                          href={resolveSlipUrl(row.slipUrl)}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: 10, fontWeight: 700, color: "#047857", textDecoration: "none" }}
+                        >
+                          View slip
+                        </a>
+                      ) : (
+                        <span style={{ color: "#cbd5e1" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </GlassCard>
 
       {/* ── Funnel & Insights Grid ── */}

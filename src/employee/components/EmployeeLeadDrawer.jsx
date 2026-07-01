@@ -9,6 +9,7 @@ import { Drawer } from "../../components/Primitives.jsx";
 import { LEAD_STATUS_LABELS, EMP_TEAM, EMP_LEAD_TEMPERATURES } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { LeadStatusBadge, AvatarCircle, FormLabel, FormTextarea } from "./EmpUI.jsx";
+import CashCollectedPanel from "../../components/CashCollectedPanel.jsx";
 
 const labelClass = "text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2";
 
@@ -187,6 +188,12 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
             </div>
           ))}
         </div>
+
+        <CashCollectedPanel
+          leadId={liveLead.id}
+          leadName={liveLead.name}
+          employeeId={liveLead.assigneeId || employee?.id}
+        />
 
         {/* Reassignment Routing Panel */}
         <div className="rounded-2xl border border-rose-100 bg-[#fffbfb] p-4 space-y-3.5 shadow-sm">
