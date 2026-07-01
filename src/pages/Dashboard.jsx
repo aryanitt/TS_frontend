@@ -62,6 +62,26 @@ const SERVICE_OPTIONS = [
 
 const PIPELINE_STAGES = ["Leads", "Contacted", "Qualified", "Proposal", "Negotiation", "Conversion"];
 
+const EMPTY_FILTER_RANGE = {
+  kpis: [
+    { label: "Revenue", value: "₹0", icon: "DollarSign" },
+    { label: "Cash Collected", value: "₹0", icon: "Users" },
+    { label: "Conversion Rate", value: "0%", icon: "Activity" },
+    { label: "Qualified Leads", value: "0", icon: "FileText" },
+    { label: "Pipeline Value", value: "₹0", icon: "DollarSign" },
+  ],
+  leaderboard: [],
+  metrics: { pickup: 0, qualification: 0, conversion: 0 },
+  insights: [],
+  activity: [],
+};
+
+const EMPTY_FILTER_DATA = {
+  today: EMPTY_FILTER_RANGE,
+  week: EMPTY_FILTER_RANGE,
+  month: EMPTY_FILTER_RANGE,
+};
+
 // ─── Per-filter mock data ─────────────────────────────────────────────────────
 // Pipeline data per service per filter
 const SERVICE_PIPELINE = {
@@ -1167,6 +1187,20 @@ function PipelineTooltip({ stage, count, convPct, dropPct, prevStage, anchorRef,
 // ─── SALES PIPELINE STATUS: Temperature segmented ribbon visualization ────────
 const SEGMENTED_STAGES = ["Contacted", "Qualified", "Meeting", "Negotiation", "Conversion"];
 
+function buildEmptyPipelineGrid() {
+  const grid = {};
+  for (const temp of ["Hot", "Warm", "Cold"]) {
+    grid[temp] = Object.fromEntries(SEGMENTED_STAGES.map((s) => [s, 0]));
+  }
+  return {
+    grid,
+    totalLeads: 0,
+    conversions: 0,
+    overallConv: 0,
+    source: "empty",
+  };
+}
+
 function PipelineBubble({ stage, count, convPct, dropOff, prevStage, index, rowKey, bubbleRefs, hoveredBubble, setHoveredBubble }) {
   const isHov = hoveredBubble && hoveredBubble.row === rowKey && hoveredBubble.col === index;
   const bubbleRef = useRef(null);
@@ -1273,52 +1307,8 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
     if (pipelineStats?.grid && (pipelineStats.source === "database" || pipelineStats.source === "empty")) {
       return pipelineStats;
     }
-
-    const data = SERVICE_PIPELINE[filterKey]?.[selectedService]
-      || SERVICE_PIPELINE[filterKey]?.["All Services"]
-      || [0, 0, 0, 0, 0, 0];
-    const contacted = data[1] ?? 0;
-    const qualified = data[2] ?? 0;
-    const meeting = data[3] ?? 0;
-    const negotiation = data[4] ?? 0;
-    const conversion = data[5] ?? 0;
-
-    const hot = [
-      Math.round(contacted * 0.45),
-      Math.round(qualified * 0.55),
-      Math.round(meeting * 0.60),
-      Math.round(negotiation * 0.65),
-      Math.round(conversion * 0.70),
-    ];
-    const warm = [
-      Math.round(contacted * 0.35),
-      Math.round(qualified * 0.30),
-      Math.round(meeting * 0.25),
-      Math.round(negotiation * 0.22),
-      Math.round(conversion * 0.20),
-    ];
-    const cold = SEGMENTED_STAGES.map((_, i) =>
-      Math.max(0, [contacted, qualified, meeting, negotiation, conversion][i] - hot[i] - warm[i]),
-    );
-
-    const grid = {
-      Hot: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, hot[i]])),
-      Warm: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, warm[i]])),
-      Cold: Object.fromEntries(SEGMENTED_STAGES.map((s, i) => [s, cold[i]])),
-    };
-
-    const total = pipelineStats?.totalLeads ?? data[0] ?? 0;
-    const closed = pipelineStats?.conversions ?? conversion;
-    const overallConv = total > 0 ? Math.round((closed / total) * 100) : 0;
-
-    return {
-      grid,
-      totalLeads: total,
-      conversions: closed,
-      overallConv,
-      source: pipelineStats?.source || "mock",
-    };
-  }, [pipelineStats, filterKey, selectedService]);
+    return buildEmptyPipelineGrid();
+  }, [pipelineStats]);
 
   const hotData = SEGMENTED_STAGES.map((s) => resolved.grid?.Hot?.[s] ?? 0);
   const warmData = SEGMENTED_STAGES.map((s) => resolved.grid?.Warm?.[s] ?? 0);
@@ -1423,10 +1413,16 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
 }
 
 // ─── AI Insights Panel ────────────────────────────────────────────────────────
-function AIInsightsPanel({ insights, filterKey }) {
+function AIInsightsPanel({ insights = [], filterKey, forecastValue = "₹0" }) {
   const isMobile = useIsMobile();
   const [refreshing, setRefreshing] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
+
+  const normalized = (Array.isArray(insights) ? insights : []).map((item) => ({
+    tone: item.tone || item.type || "check",
+    title: item.title || item.text || "Insight",
+    body: item.body || (item.text && item.title ? item.text : ""),
+  }));
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -1456,48 +1452,37 @@ function AIInsightsPanel({ insights, filterKey }) {
       />
 
       <div className="space-y-2 sm:space-y-3 min-w-0">
-        <motion.div
-          whileHover={isMobile ? undefined : { y: -1 }}
-          className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-white border border-slate-200 flex items-start gap-2.5 sm:gap-3 w-full min-w-0"
-        >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0">
-            <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        {normalized.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-8 text-center">
+            <Sparkles className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-slate-600">No insights yet</p>
+            <p className="text-xs text-slate-400 mt-1">Insights appear from your live CRM activity and lead data.</p>
           </div>
-          <div className="space-y-2 flex-1 min-w-0">
-            <div className="min-w-0">
-              <p className="text-[11px] sm:text-xs font-bold text-slate-800 leading-snug">Expand Opportunity: Global Logix</p>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 leading-relaxed">
-                High engagement in APAC. Potential ₹10L upsell based on usage patterns.
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <button type="button" className="w-full sm:w-auto px-3.5 py-1.5 bg-rose-600 text-white text-[11px] font-bold rounded-lg hover:bg-rose-700 transition-colors">
-                Open Deal
-              </button>
-              <span className="text-[10px] text-slate-400 text-center sm:text-left">Confidence: 94%</span>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div
-          whileHover={isMobile ? undefined : { y: -1 }}
-          className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-white border border-slate-200 flex items-start gap-2.5 sm:gap-3 w-full min-w-0"
-        >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
-            <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          </div>
-          <div className="space-y-2 flex-1 min-w-0">
-            <div className="min-w-0">
-              <p className="text-[11px] sm:text-xs font-bold text-slate-800 leading-snug">Lead At Risk: TechNova Inc.</p>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 leading-relaxed">
-                No contact in 14 days. Competitor mentioned in last email thread.
-              </p>
-            </div>
-            <button type="button" className="w-full sm:w-auto px-3.5 py-1.5 border border-slate-300 text-slate-700 hover:border-rose-300 hover:text-rose-700 text-[11px] font-bold rounded-lg bg-white transition-colors">
-              Schedule Follow-up
-            </button>
-          </div>
-        </motion.div>
+        ) : (
+          normalized.slice(0, 2).map((item, idx) => (
+            <motion.div
+              key={`${item.title}-${idx}`}
+              whileHover={isMobile ? undefined : { y: -1 }}
+              className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-white border border-slate-200 flex items-start gap-2.5 sm:gap-3 w-full min-w-0"
+            >
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+                item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
+                  ? "bg-amber-50 border-amber-100 text-amber-600"
+                  : "bg-emerald-50 border-emerald-100 text-emerald-600"
+              }`}>
+                {item.tone === "warn" || item.tone === "warning" || item.tone === "danger"
+                  ? <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  : <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+              </div>
+              <div className="space-y-1 flex-1 min-w-0">
+                <p className="text-[11px] sm:text-xs font-bold text-slate-800 leading-snug">{item.title}</p>
+                {item.body && (
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 leading-relaxed">{item.body}</p>
+                )}
+              </div>
+            </motion.div>
+          ))
+        )}
 
         <motion.div
           whileHover={isMobile ? undefined : { y: -1 }}
@@ -1505,13 +1490,10 @@ function AIInsightsPanel({ insights, filterKey }) {
         >
           <div className="flex items-start justify-between gap-2 mb-2 sm:mb-3 w-full min-w-0">
             <div className="min-w-0 flex-1">
-              <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Quarterly Forecast</p>
+              <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Pipeline Forecast</p>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mt-1">
-                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 tabular-nums">₹12.4L</span>
-                <span className="text-[9px] sm:text-[10px] text-emerald-600 font-semibold flex items-center gap-0.5">
-                  <TrendingUp className="w-3 h-3" />
-                  +15% over target
-                </span>
+                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 tabular-nums">{forecastValue}</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-500 font-semibold">from live data</span>
               </div>
             </div>
             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0">
@@ -1521,7 +1503,7 @@ function AIInsightsPanel({ insights, filterKey }) {
           <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden w-full">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: "80%" }}
+              animate={{ width: normalized.length ? "80%" : "0%" }}
               transition={{ duration: 1, ease: "easeOut" }}
               className="h-full bg-gradient-to-r from-rose-500 to-rose-400 rounded-full"
             />
@@ -2198,36 +2180,49 @@ export default function Dashboard() {
   const { preset } = useDateRange();
   const [selectedService, setSelectedService] = useState("All Services");
   const [apiFilterData, setApiFilterData] = useState(null);
+  const [aiInsights, setAiInsights] = useState([]);
   const [teamEmployees, setTeamEmployees] = useState([]);
-  const [chartRevenue, setChartRevenue] = useState(revenueSeries);
+  const [chartRevenue, setChartRevenue] = useState([]);
   const [pipelineStats, setPipelineStats] = useState(null);
   const [pipelineLoading, setPipelineLoading] = useState(true);
   const [liveActivity, setLiveActivity] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
 
   const filterKey = preset === "custom" ? "week" : preset;
   const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
-  const fd        = mergedFilter[filterKey];
+  const fd = mergedFilter?.[filterKey] || EMPTY_FILTER_RANGE;
 
   const leaderboardData = useMemo(() => {
     const fromTeam = buildLeaderboardFromEmployees(teamEmployees);
     if (fromTeam.length) return fromTeam;
-    const fromFilter = fd?.leaderboard;
+    const fromFilter = mergedFilter?.[filterKey]?.leaderboard;
     if (fromFilter?.length) return fromFilter.slice(0, 3);
-    const fromMock = FILTER_DATA[filterKey]?.leaderboard;
-    if (fromMock?.length) return fromMock.slice(0, 3);
-    return FILTER_DATA.week.leaderboard.slice(0, 3);
-  }, [fd?.leaderboard, filterKey, teamEmployees]);
+    return [];
+  }, [mergedFilter, filterKey, teamEmployees]);
+
+  const insightItems = aiInsights.length ? aiInsights : (fd.insights || []);
+  const pipelineForecast = fd.kpis?.find((k) => k.label === "Pipeline Value")?.value || "₹0";
+  const activityItems = liveActivity?.length ? liveActivity : (fd.activity || []);
 
   useEffect(() => {
     let cancelled = false;
+    setDashboardLoading(true);
     (async () => {
       try {
         const data = await apiGet("/api/dashboard", { skipCache: true, cacheTtl: 0 });
         if (cancelled) return;
         if (data.filterData) setApiFilterData(data.filterData);
+        if (Array.isArray(data.aiInsights)) setAiInsights(data.aiInsights);
         if (data.revenueSeries?.length) setChartRevenue(data.revenueSeries);
+        else setChartRevenue([]);
       } catch {
-        // keep inline mock fallback
+        if (!cancelled) {
+          setApiFilterData(EMPTY_FILTER_DATA);
+          setAiInsights([]);
+          setChartRevenue([]);
+        }
+      } finally {
+        if (!cancelled) setDashboardLoading(false);
       }
       try {
         const team = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
@@ -2248,7 +2243,7 @@ export default function Dashboard() {
           );
         }
       } catch {
-        // keep mock fallback
+        // ignore
       }
     })();
     return () => { cancelled = true; };
@@ -2263,7 +2258,7 @@ export default function Dashboard() {
         if (!cancelled && data?.success) setPipelineStats(data);
       })
       .catch(() => {
-        if (!cancelled) setPipelineStats(null);
+        if (!cancelled) setPipelineStats({ success: true, ...buildEmptyPipelineGrid() });
       })
       .finally(() => {
         if (!cancelled) setPipelineLoading(false);
@@ -2274,15 +2269,13 @@ export default function Dashboard() {
   // Reset service filter when time filter changes
   useEffect(() => { setSelectedService("All Services"); }, [filterKey]);
 
-  // Resolve service breakdown for the current filter + service selection
   const serviceBreakdownData = SERVICE_BREAKDOWN[filterKey];
-  const services = serviceBreakdownData[selectedService] || serviceBreakdownData["All Services"];
-  const activityItems = liveActivity?.length ? liveActivity : fd.activity;
+  const services = serviceBreakdownData?.[selectedService] || serviceBreakdownData?.["All Services"] || [];
 
   return (
     <div className="space-y-4 sm:space-y-5 page-shell min-w-0">
 
-      <KPICardsRow kpiData={fd.kpis} filterKey={filterKey} />
+      <KPICardsRow kpiData={dashboardLoading ? EMPTY_FILTER_RANGE.kpis : fd.kpis} filterKey={filterKey} />
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,_36%)] gap-3 sm:gap-4 items-start min-w-0">
 
@@ -2301,7 +2294,7 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-col gap-3 sm:gap-4 min-w-0 w-full">
-          <AIInsightsPanel insights={fd.insights} filterKey={filterKey} />
+          <AIInsightsPanel insights={insightItems} filterKey={filterKey} forecastValue={pipelineForecast} />
           <ImpMetrics metrics={fd.metrics} filterKey={filterKey} />
           <RecentActivityPanel items={activityItems} filterKey={filterKey} />
         </div>
