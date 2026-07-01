@@ -287,31 +287,39 @@ export default function CashCollectedPanel({
               />
             </label>
 
-            <label className="block sm:col-span-2">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                <CreditCard className="w-3 h-3" /> Transaction ID
-              </span>
-              <input
-                type="text"
-                value={form.transactionId}
-                onChange={(e) => setForm((prev) => ({ ...prev, transactionId: e.target.value }))}
-                className="mt-1 w-full h-9 px-3 rounded-xl border border-emerald-100 bg-white text-xs font-semibold text-slate-800 outline-none focus:border-emerald-400"
-                placeholder="UPI ref / bank txn id"
-              />
-            </label>
+            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <CreditCard className="w-3 h-3" /> Transaction ID
+                </span>
+                <input
+                  type="text"
+                  value={form.transactionId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, transactionId: e.target.value }))}
+                  className="mt-1 w-full h-9 px-3 rounded-xl border border-emerald-100 bg-white text-xs font-semibold text-slate-800 outline-none focus:border-emerald-400"
+                  placeholder="UPI ref / bank txn id"
+                />
+              </label>
 
-            <label className="block sm:col-span-2">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                <Upload className="w-3 h-3" /> Payment Slip
-              </span>
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => setForm((prev) => ({ ...prev, slip: e.target.files?.[0] || null }))}
-                className="mt-1 block w-full text-[11px] text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-700 file:font-bold"
-              />
-              <p className="text-[9px] text-slate-400 mt-1">Add transaction ID or upload slip (at least one required).</p>
-            </label>
+              <label className="block">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <Upload className="w-3 h-3" /> Payment Slip
+                </span>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => setForm((prev) => ({ ...prev, slip: e.target.files?.[0] || null }))}
+                  className="mt-1 block w-full h-9 text-[11px] text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-700 file:font-bold"
+                />
+                {form.slip && (
+                  <p className="text-[9px] text-emerald-700 mt-1 font-semibold truncate">{form.slip.name}</p>
+                )}
+              </label>
+            </div>
+
+            <p className="sm:col-span-2 text-[9px] text-slate-400 -mt-1">
+              Transaction ID and payment slip upload are both available — add one or both before saving.
+            </p>
 
             <label className="block sm:col-span-2">
               <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
