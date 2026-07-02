@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation, useNavigate, Link, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, Bell, Menu, Plus, ChevronDown, X,
-  CheckSquare, MessageSquare, Phone, Calendar,
+  CheckSquare, MessageSquare, Phone, Calendar, User, LogOut,
 } from "lucide-react";
 import EmployeeDoodleAvatar from "./EmployeeDoodleAvatar.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 
 const QUICK_ACTIONS = [
@@ -46,13 +47,16 @@ export default function EmployeeTopbar({ onMenu }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { employee } = useEmployee();
+  const { logout } = useAuth();
   const meta = pathname.startsWith("/employee/sales-process/") && pathname !== "/employee/sales-process"
     ? { title: "SOP Detail", sub: "Full playbook · Scripts · Checklist" }
     : PAGE_META[pathname] || { title: "Employee Panel", sub: "" };
   const [notifOpen, setNotifOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const quickRef = useRef(null);
+  const userRef = useRef(null);
   const isCallsPage = pathname === "/employee/calls";
   const callPeriod = searchParams.get("period") || "today";
 
@@ -70,10 +74,24 @@ export default function EmployeeTopbar({ onMenu }) {
       if (quickRef.current && !quickRef.current.contains(e.target)) {
         setQuickOpen(false);
       }
+      if (userRef.current && !userRef.current.contains(e.target)) {
+        setUserMenuOpen(false);
+      }
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
+
+  const handleUserMenu = (item) => {
+    setUserMenuOpen(false);
+    if (item === "My Profile") navigate("/employee/profile");
+    else if (item === "Sign out") {
+      logout();
+      navigate("/login", { replace: true });
+    }
+  };
+
+  const userMenuItems = ["My Profile", "Sign out"];
 
   return (
     <>
@@ -191,24 +209,38 @@ export default function EmployeeTopbar({ onMenu }) {
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-600 border-2 border-white" />
             </button>
 
-            <Link
-              to="/employee/profile"
-              className="hidden sm:flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl hover:bg-[#FFF5F8] transition border border-[#E5E7EB] bg-white shrink-0"
-            >
-              <EmployeeDoodleAvatar size={32} shape="circle" />
-              <div className="hidden lg:block text-left min-w-0">
-                <div className="text-xs font-bold text-rose-800 truncate max-w-[100px]">{employee.name.split(" ")[0]}</div>
-                <div className="text-[10px] text-slate-400 truncate">{employee.role}</div>
-              </div>
-            </Link>
-
-            <Link
-              to="/employee/profile"
-              className="sm:hidden w-9 h-9 rounded-full border border-[#E5E7EB] bg-white grid place-items-center shrink-0 hover:bg-[#FFE4EC] transition"
-              aria-label="Profile"
-            >
-              <EmployeeDoodleAvatar size={28} shape="circle" />
-            </Link>
+            <div ref={userRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setUserMenuOpen((v) => !v)}
+                className="relative flex items-center justify-center gap-1.5 sm:gap-2 w-9 h-9 sm:w-auto sm:h-auto p-0 sm:pl-1 sm:pr-3 sm:py-1 rounded-full sm:rounded-xl
+                  border border-[#E5E7EB] bg-white hover:bg-[#FFE4EC] transition"
+              >
+                <EmployeeDoodleAvatar size={28} shape="circle" className="shrink-0" />
+                <div className="hidden lg:block text-left leading-tight min-w-0">
+                  <div className="text-xs font-semibold text-[#DC143C] truncate max-w-[100px]">{employee.name?.split(" ")[0]}</div>
+                  <div className="text-[10px] text-[#6B7280] truncate">{employee.role}</div>
+                </div>
+                <ChevronDown className="hidden sm:block w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              </button>
+              {userMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 popover-responsive bg-white rounded-2xl
+                  border border-[#FFD6E5] shadow-[0_12px_40px_rgba(220,20,60,0.12)] p-2 z-50">
+                  {userMenuItems.map((i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleUserMenu(i)}
+                      className="w-full text-left px-3 py-2 text-sm rounded-xl transition cursor-pointer flex items-center gap-2 text-[#111827] hover:bg-[#FFF5F8] hover:text-[#DC143C]"
+                    >
+                      {i === "My Profile" && <User className="w-4 h-4 shrink-0" />}
+                      {i === "Sign out" && <LogOut className="w-4 h-4 shrink-0" />}
+                      {i}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, LabelList } from "recharts";
-import { Badge } from "../../components/Primitives.jsx";
+import { Badge, StatCard, GlassCard } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import {
   buildPipelineChartFromLeads,
@@ -18,12 +18,11 @@ import {
   filterCallsForPeriod,
   LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
-import { AvatarCircle, EmployeeDoodleAvatar } from "../components/EmpUI.jsx";
+import { AvatarCircle } from "../components/EmpUI.jsx";
+import { EMP_PAGE } from "../../lib/employeeLayout.js";
 import useIsMobile from "../../lib/useIsMobile.js";
 import { formatGreeting } from "../../lib/greeting.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
-
-const PANEL = "rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]";
 
 const PIPE_FILTERS = [
   { id: "all", label: "All" },
@@ -33,30 +32,6 @@ const PIPE_FILTERS = [
 ];
 
 const PERIODS = ["Today", "This Week", "This Month"];
-
-function KpiCard({ label, value, change, icon: Icon, iconTone, className = "" }) {
-  return (
-    <article className={`${PANEL} p-2.5 sm:p-4 flex flex-col justify-between min-h-[88px] sm:min-h-[100px] hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition-all duration-200 ${className}`}>
-      <div className="flex items-start justify-between gap-1.5 sm:gap-2">
-        <div className="min-w-0">
-          <p className="text-[8px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wide leading-tight">{label}</p>
-          <p className="text-lg sm:text-2xl font-black text-slate-900 mt-0.5 sm:mt-1 tabular-nums leading-none">{value}</p>
-        </div>
-        {Icon && (
-          <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl grid place-items-center shrink-0 border ${iconTone}`}>
-            <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          </div>
-        )}
-      </div>
-      {change && (
-        <p className="text-[9px] sm:text-[10px] font-semibold text-emerald-600 mt-2 sm:mt-3 leading-tight">
-          {change}
-          <span className="hidden sm:inline text-slate-400 font-medium"> vs last period</span>
-        </p>
-      )}
-    </article>
-  );
-}
 
 function SectionHead({ icon: Icon, title, sub, action, stackAction }) {
   return (
@@ -122,7 +97,7 @@ export default function EmployeeDashboard() {
       value: String(summary.total),
       change: summary.total ? `${summary.active} active` : "No leads yet",
       icon: Users,
-      iconTone: "bg-sky-50 text-sky-600 border-sky-100",
+      tone: "info",
       link: "/employee/leads",
     },
     {
@@ -130,7 +105,7 @@ export default function EmployeeDashboard() {
       value: String(summary.hot),
       change: summary.hot ? "Needs attention" : "None right now",
       icon: Flame,
-      iconTone: "bg-orange-50 text-orange-600 border-orange-100",
+      tone: "warning",
       filter: "hot",
     },
     {
@@ -138,7 +113,7 @@ export default function EmployeeDashboard() {
       value: String(leads.filter((l) => l.status === "converted").length),
       change: summary.total ? `${summary.winRate}% rate` : "—",
       icon: CheckCircle2,
-      iconTone: "bg-emerald-50 text-emerald-600 border-emerald-100",
+      tone: "success",
       filter: "converted",
     },
     {
@@ -146,7 +121,7 @@ export default function EmployeeDashboard() {
       value: String(tasksDue),
       change: tasksDone ? `${tasksDone} done today` : "None completed",
       icon: ClipboardList,
-      iconTone: "bg-violet-50 text-violet-600 border-violet-100",
+      tone: "primary",
       link: "/employee/tasks",
     },
   ], [summary, leads, tasksDue, tasksDone]);
@@ -192,45 +167,41 @@ export default function EmployeeDashboard() {
   );
 
   return (
-    <div className="space-y-3 sm:space-y-3 sm:space-y-5 page-shell min-w-0 animate-fade-in">
-      {/* Header */}
-      <div className={`${PANEL} p-3 sm:p-5`}>
-        <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-start gap-2.5 sm:gap-4 min-w-0">
-            <EmployeeDoodleAvatar size={isMobile ? 40 : 52} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-[9px] sm:text-[11px] font-semibold text-slate-400 uppercase tracking-wide leading-tight">
-                {period === "This Week" ? "Week" : period === "This Month" ? "Month" : period} · {dateLabel}
-              </p>
-              <h1 className="font-display text-base sm:text-2xl font-bold text-slate-900 tracking-tight mt-0.5 leading-tight">
-                {formatGreeting(employee.name)}
-              </h1>
-              <div className="flex gap-1.5 mt-2 overflow-x-auto scrollbar-none -mx-0.5 px-0.5 pb-0.5">
-                {[
-                  { label: `${hotFollowUps} hot follow-ups`, to: "/employee/follow-ups" },
-                  { label: `${meetingsUpcoming.length} meetings`, to: "/employee/meetings" },
-                  { label: `${pendingAgenda} agenda`, to: null },
-                ].map((chip) => (
-                  chip.to ? (
-                    <Link
-                      key={chip.label}
-                      to={chip.to}
-                      className="inline-flex items-center gap-0.5 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg bg-slate-50 border border-slate-200 text-[10px] sm:text-[11px] font-semibold text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition shrink-0"
-                    >
-                      {chip.label}
-                      <ChevronRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 opacity-50" />
-                    </Link>
-                  ) : (
-                    <span key={chip.label} className="inline-flex px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg bg-slate-50 border border-slate-200 text-[10px] sm:text-[11px] font-semibold text-slate-600 shrink-0">
-                      {chip.label}
-                    </span>
-                  )
-                ))}
-              </div>
+    <div className={EMP_PAGE}>
+      <GlassCard className="p-3 sm:p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              {period === "This Week" ? "Week" : period === "This Month" ? "Month" : period} · {dateLabel}
+            </p>
+            <h1 className="font-display text-base sm:text-xl font-black text-slate-900 tracking-tight mt-0.5">
+              {formatGreeting(employee.name)}
+            </h1>
+            <div className="flex gap-1.5 mt-2 overflow-x-auto scrollbar-none">
+              {[
+                { label: `${hotFollowUps} hot follow-ups`, to: "/employee/follow-ups" },
+                { label: `${meetingsUpcoming.length} meetings`, to: "/employee/meetings" },
+                { label: `${pendingAgenda} agenda`, to: null },
+              ].map((chip) => (
+                chip.to ? (
+                  <Link
+                    key={chip.label}
+                    to={chip.to}
+                    className="inline-flex items-center gap-0.5 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-rose-50/70 border border-rose-100 text-[10px] sm:text-[11px] font-semibold text-[#be123c] hover:bg-rose-50 transition shrink-0"
+                  >
+                    {chip.label}
+                    <ChevronRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 opacity-50" />
+                  </Link>
+                ) : (
+                  <span key={chip.label} className="inline-flex px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-slate-50 border border-slate-200 text-[10px] sm:text-[11px] font-semibold text-slate-600 shrink-0">
+                    {chip.label}
+                  </span>
+                )
+              ))}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 lg:shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <div className={`${SEGMENT_WRAP} flex-1 sm:flex-none min-w-0`}>
               {PERIODS.map((d) => (
                 <button
@@ -249,16 +220,16 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={() => navigate("/employee/leads?action=add")}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-rose-600 text-white text-xs sm:text-sm font-bold hover:bg-rose-700 transition shadow-sm shrink-0"
+              className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#be123c] hover:bg-[#a20f32] text-white text-xs sm:text-sm font-bold transition shadow-md shrink-0"
             >
               <Plus className="w-4 h-4" /> Add Lead
             </button>
           </div>
         </div>
-      </div>
+      </GlassCard>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {statCards.map((s) => (
           <button
             key={s.label}
@@ -269,16 +240,25 @@ export default function EmployeeDashboard() {
             }}
             className="text-left w-full min-w-0"
           >
-            <KpiCard {...s} />
+            <StatCard
+              label={s.label}
+              value={s.value}
+              change={s.change}
+              sub=""
+              icon={s.icon}
+              tone={s.tone}
+              compact
+              hover
+            />
           </button>
         ))}
       </div>
 
       {/* Main grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-3 sm:gap-4 md:gap-5 items-start">
-        <div className="space-y-3 sm:space-y-4 md:space-y-5 min-w-0">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,_36%)] gap-3 sm:gap-4 items-start">
+        <div className="space-y-3 sm:gap-4 min-w-0">
           {/* Pipeline */}
-          <div className={`${PANEL} p-3 sm:p-4 md:p-5 min-w-0 overflow-hidden`}>
+          <GlassCard className="p-3 sm:p-4 md:p-5 min-w-0 overflow-hidden !bg-white !border-slate-200/80 !from-white !via-white !to-white">
             <SectionHead
               icon={Target}
               title="Lead Pipeline"
@@ -371,10 +351,10 @@ export default function EmployeeDashboard() {
                 </div>
               </div>
             )}
-          </div>
+          </GlassCard>
 
           {/* Sources + Activity */}
-          <div className={`${PANEL} overflow-hidden min-w-0`}>
+          <GlassCard className="overflow-hidden min-w-0 !bg-white !border-slate-200/80 !from-white !via-white !to-white">
             <div className="grid grid-cols-1 md:grid-cols-2 md:divide-x divide-slate-100">
               <div className="p-3 sm:p-4 md:p-5">
                 <SectionHead icon={TrendingUp} title="Lead Sources" sub={isMobile ? "Top channels" : "Top channels this month"} />
@@ -452,12 +432,12 @@ export default function EmployeeDashboard() {
                 </ul>
               </div>
             </div>
-          </div>
+          </GlassCard>
         </div>
 
         {/* Agenda sidebar */}
         <div className="space-y-2 sm:space-y-3 xl:sticky xl:top-24 min-w-0">
-          <div className={`${PANEL} p-3 sm:p-4 md:p-5`}>
+          <GlassCard className="p-3 sm:p-4 md:p-5 !bg-white !border-slate-200/80 !from-white !via-white !to-white">
             <SectionHead
               icon={Calendar}
               title="Today's Agenda"
@@ -546,18 +526,15 @@ export default function EmployeeDashboard() {
                 </div>
               );})}
             </div>
-          </div>
+          </GlassCard>
 
-          <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {[
               { label: "Follow-ups", to: "/employee/follow-ups", icon: Zap, count: followUps.filter((f) => !f.done).length },
               { label: "All Leads", to: "/employee/leads", icon: Target, count: leads.length },
             ].map((q) => (
-              <Link
-                key={q.to}
-                to={q.to}
-                className={`${PANEL} flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 hover:border-slate-300 hover:shadow-sm transition group min-w-0`}
-              >
+              <Link key={q.to} to={q.to} className="min-w-0">
+                <GlassCard hover className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 !bg-white !border-slate-200/80 !from-white !via-white !to-white group min-w-0">
                 <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-slate-50 border border-slate-200 grid place-items-center group-hover:bg-slate-100 transition shrink-0">
                   <q.icon className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-600" />
                 </div>
@@ -565,6 +542,7 @@ export default function EmployeeDashboard() {
                   <p className="text-[10px] sm:text-[11px] font-bold text-slate-900 truncate">{q.label}</p>
                   <p className="text-[9px] sm:text-[10px] text-slate-400">{q.count} items</p>
                 </div>
+                </GlassCard>
               </Link>
             ))}
           </div>
