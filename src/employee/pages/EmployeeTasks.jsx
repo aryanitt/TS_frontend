@@ -318,11 +318,7 @@ export default function EmployeeTasks() {
       .filter(([, items]) => items.length > 0)
       .sort(([a], [b]) => new Date(a) - new Date(b));
     entries = tab === "upcoming"
-      ? entries.filter(([d, items]) => {
-        const day = new Date(`${d}T00:00:00`);
-        if (day >= today) return true;
-        return items.some((t) => !t.done);
-      })
+      ? entries.filter(([d]) => new Date(`${d}T00:00:00`) >= today)
       : entries.filter(([d]) => new Date(`${d}T00:00:00`) < today);
 
     if (search.trim()) {

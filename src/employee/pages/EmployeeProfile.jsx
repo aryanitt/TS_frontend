@@ -38,13 +38,13 @@ function formatJoinDate(raw) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function StatTile({ icon: Icon, label, value, sub }) {
+function StatTile({ icon: Icon, label, value, sub, iconTone = "bg-rose-50 text-rose-600 border-rose-100" }) {
   return (
-    <article className={`${PANEL} p-3 sm:p-4 flex flex-col gap-1 min-h-[76px] sm:min-h-[84px]`}>
+    <article className={`${PANEL} p-3 sm:p-4 flex flex-col gap-1 min-h-[76px] sm:min-h-[84px] hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition-all duration-200`}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[9px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
-        <div className="w-7 h-7 rounded-lg bg-rose-50 border border-rose-100 grid place-items-center shrink-0">
-          <Icon className="w-3.5 h-3.5 text-rose-600" />
+        <div className={`w-7 h-7 rounded-lg border grid place-items-center shrink-0 ${iconTone}`}>
+          <Icon className="w-3.5 h-3.5" />
         </div>
       </div>
       <p className="text-lg sm:text-xl font-black text-slate-900 tabular-nums leading-none">{value}</p>
@@ -118,24 +118,23 @@ export default function EmployeeProfile() {
   return (
     <div className="space-y-4 sm:space-y-5 page-shell min-w-0 animate-fade-in">
       {/* Hero */}
-      <section className="rounded-2xl sm:rounded-[20px] overflow-hidden border border-rose-200/60 bg-gradient-to-br from-rose-700 via-rose-600 to-rose-500 text-white shadow-[0_8px_32px_rgba(190,18,60,0.25)] relative">
-        <div className="absolute inset-0 opacity-25 bg-[radial-gradient(circle_at_top_right,white,transparent_55%)]" />
-        <div className="relative z-10 p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
-          <div className="shrink-0 ring-4 ring-white/20 rounded-full">
-            <EmployeeDoodleAvatar size={isMobile ? 64 : 80} />
-          </div>
+      <section className={`${PANEL} p-4 sm:p-6 relative overflow-hidden`}>
+        <div className="absolute inset-0 bg-gradient-to-br from-rose-50/80 via-white to-slate-50 pointer-events-none" />
+        <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-rose-100/40 blur-2xl pointer-events-none" />
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+          <EmployeeDoodleAvatar size={isMobile ? 64 : 80} shape="rounded" className="!border-slate-200" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <Badge tone="muted" className="!bg-white/15 !text-white !border-white/25 !text-[10px]">
+              <Badge tone="primary" className="!text-[10px]">
                 {employee.department || "Sales"}
               </Badge>
               {employee.id && (
-                <span className="text-[10px] font-semibold text-white/70">ID #{employee.id}</span>
+                <span className="text-[10px] font-semibold text-slate-400">ID #{employee.id}</span>
               )}
             </div>
-            <h1 className="font-display text-xl sm:text-2xl font-black tracking-tight truncate">{employee.name}</h1>
-            <p className="text-sm text-white/85 mt-0.5">{employee.role || "Sales Executive"}</p>
-            <p className="text-xs text-white/70 mt-2 max-w-md">
+            <h1 className="font-display text-xl sm:text-2xl font-black tracking-tight text-slate-900 truncate">{employee.name}</h1>
+            <p className="text-sm text-slate-600 mt-0.5">{employee.role || "Sales Executive"}</p>
+            <p className="text-xs text-slate-500 mt-2 max-w-md">
               Manage your workspace preferences and track how you&apos;re performing this period.
             </p>
           </div>
@@ -144,13 +143,13 @@ export default function EmployeeProfile() {
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-        <StatTile icon={Users} label="Active Leads" value={String(leads.length)} sub="In your pipeline" />
-        <StatTile icon={Phone} label="Calls Today" value={String(stats.callsToday)} sub={`Target ${employee.callsTarget || 60}`} />
-        <StatTile icon={Target} label="Follow-ups" value={String(stats.openFollowUps)} sub="Open items" />
-        <StatTile icon={TrendingUp} label="Converted" value={String(stats.converted)} sub={`${stats.convRate}% win rate`} />
+        <StatTile icon={Users} label="Active Leads" value={String(leads.length)} sub="In your pipeline" iconTone="bg-sky-50 text-sky-600 border-sky-100" />
+        <StatTile icon={Phone} label="Calls Today" value={String(stats.callsToday)} sub={`Target ${employee.callsTarget || 60}`} iconTone="bg-violet-50 text-violet-600 border-violet-100" />
+        <StatTile icon={Target} label="Follow-ups" value={String(stats.openFollowUps)} sub="Open items" iconTone="bg-amber-50 text-amber-600 border-amber-100" />
+        <StatTile icon={TrendingUp} label="Converted" value={String(stats.converted)} sub={`${stats.convRate}% win rate`} iconTone="bg-emerald-50 text-emerald-600 border-emerald-100" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-5 items-start">
         {/* Contact & work info */}
         <div className="lg:col-span-2 space-y-4">
           <article className={`${PANEL} p-4 sm:p-5`}>

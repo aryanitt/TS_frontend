@@ -1629,18 +1629,18 @@ function ActivityHistoryDrawerContent({ items }) {
   return (
     <div className="space-y-5 flex flex-col h-full">
       {/* Search Input */}
-      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-secondary/50 border border-border">
-        <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus-within:border-rose-300 focus-within:ring-2 focus-within:ring-rose-100 transition-all shadow-sm">
+        <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
         <input
           type="text"
           placeholder="Search activity timeline..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none w-full"
+          className="bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none w-full"
         />
         {search && (
-          <button onClick={() => setSearch("")}>
-            <X className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+          <button type="button" onClick={() => setSearch("")} className="text-slate-400 hover:text-slate-700">
+            <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -1650,11 +1650,12 @@ function ActivityHistoryDrawerContent({ items }) {
         {categories.map(cat => (
           <button
             key={cat}
+            type="button"
             onClick={() => setActiveFilter(cat)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
               activeFilter === cat
-                ? "bg-rose-600 text-white shadow-sm"
-                : "bg-secondary/40 border border-border text-gray-500 hover:text-rose-700 hover:border-rose-200"
+                ? "bg-rose-600 text-white shadow-sm shadow-rose-200"
+                : "bg-white border border-slate-200 text-slate-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50/60"
             }`}
           >
             {cat}
@@ -1665,7 +1666,7 @@ function ActivityHistoryDrawerContent({ items }) {
       {/* Timeline List */}
       <div className="flex-1 overflow-y-auto pr-1 relative min-h-0">
         {/* Vertical Timeline Bar */}
-        <div className="absolute left-6 top-3 bottom-3 w-0.5 bg-rose-100/60" />
+        <div className="absolute left-6 top-3 bottom-3 w-0.5 bg-rose-200" />
 
         <div className="space-y-4 relative">
           {filteredItems.map((item, i) => {
@@ -1682,18 +1683,18 @@ function ActivityHistoryDrawerContent({ items }) {
               >
                 {/* Timeline node icon */}
                 <div className={`w-8 h-8 rounded-full border flex items-center justify-center flex-shrink-0 z-10 bg-white transition-all shadow-sm ${config.bg}`}>
-                  <Icon className="w-4.5 h-4.5" />
+                  <Icon className="w-4 h-4" />
                 </div>
 
                 {/* Content block */}
-                <div className="flex-1 bg-white/40 border border-rose-100/30 group-hover:border-rose-200 hover:bg-rose-50/20 rounded-2xl p-3.5 transition-all">
+                <div className="flex-1 bg-white border border-rose-100 group-hover:border-rose-200 hover:bg-rose-50/40 rounded-2xl p-3.5 transition-all shadow-sm">
                   <div className="flex items-start justify-between gap-3 mb-1">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-rose-500 bg-rose-50 px-2 py-0.5 rounded-md">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md">
                       {item.catTag}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-bold tracking-tight whitespace-nowrap">{item.time}</span>
+                    <span className="text-[10px] text-slate-400 font-bold tracking-tight whitespace-nowrap">{item.time}</span>
                   </div>
-                  <p className="text-xs text-gray-700 group-hover:text-gray-900 leading-relaxed font-medium">
+                  <p className="text-xs text-slate-700 group-hover:text-slate-900 leading-relaxed font-medium">
                     {item.text}
                   </p>
                 </div>
@@ -1702,7 +1703,7 @@ function ActivityHistoryDrawerContent({ items }) {
           })}
 
           {filteredItems.length === 0 && (
-            <p className="text-center text-xs text-muted-foreground py-8">No activities found matching filters.</p>
+            <p className="text-center text-xs text-slate-500 py-8">No activities found matching filters.</p>
           )}
         </div>
       </div>
@@ -1762,8 +1763,14 @@ const getActivityIconConfig = (text) => {
       icon: CheckCircle2
     };
   }
+  if (t.includes("rahul") || t.includes("priya") || t.includes("aman") || t.includes("aryan") || t.includes("employee") || t.includes("added new")) {
+    return {
+      bg: "bg-slate-50 border-slate-200 text-slate-600 shadow-sm shadow-slate-500/5",
+      icon: InfoIcon
+    };
+  }
   return {
-    bg: "bg-blue-50 border-blue-100 text-blue-600 shadow-sm shadow-blue-500/10",
+    bg: "bg-rose-50 border-rose-200 text-rose-600 shadow-sm shadow-rose-500/10",
     icon: InfoIcon
   };
 };
