@@ -270,8 +270,12 @@ export default function EmployeeTasks() {
 
   useEffect(() => {
     if (loading || !employee?.id) return;
+    const hasTasks = Object.values(tasks || {}).some(
+      (items) => Array.isArray(items) && items.length > 0,
+    );
+    if (hasTasks) return;
     refreshTasks(employee.id, employee);
-  }, [loading, employee?.id, employee?.name, refreshTasks]);
+  }, [loading, employee?.id, tasks, refreshTasks]);
 
   const today = new Date(`${getEmpAppToday()}T00:00:00`);
 

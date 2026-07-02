@@ -10,7 +10,7 @@ const DEFAULT_GET_TTL = 5 * 60 * 1000; // 5 minutes
 const memoryCache = new Map();
 const inflightGets = new Map();
 let lastFetchAt = 0;
-const MIN_FETCH_GAP_MS = 120;
+const MIN_FETCH_GAP_MS = 350;
 const DEFAULT_FETCH_TIMEOUT_MS = 20000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -310,7 +310,7 @@ export async function apiJson(path, options = {}) {
 
   if (!parsed) {
     const preview = text.slice(0, 80);
-    if (isGet && response.status === 429 && _retry429 < 2) {
+    if (isGet && response.status === 429 && _retry429 < 1 && isAuthApiPath(path)) {
       await sleep(2000 * (_retry429 + 1));
       return apiJson(path, {
         cacheTtl,
@@ -339,7 +339,7 @@ export async function apiJson(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (isGet && response.status === 429 && _retry429 < 2) {
+    if (isGet && response.status === 429 && _retry429 < 1 && isAuthApiPath(path)) {
       await sleep(2000 * (_retry429 + 1));
       return apiJson(path, {
         cacheTtl,
