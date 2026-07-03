@@ -23,7 +23,7 @@ import {
   kpis, recentLeads, aiInsights, performers, revenueSeries
 } from "../data/mock.js";
 import { useDateRange } from "../context/DateRangeContext.jsx";
-import { apiGet } from "../lib/api.js";
+import { apiGet, readCachedJson, readStaleCachedJson } from "../lib/api.js";
 import { mergeFilterData } from "../lib/fetchWithFallback.js";
 import { formatINR } from "../lib/indianFormat.js";
 
@@ -61,6 +61,33 @@ const SERVICE_OPTIONS = [
 ];
 
 const PIPELINE_STAGES = ["Leads", "Contacted", "Qualified", "Proposal", "Negotiation", "Conversion"];
+
+const ADMIN_DASH_CACHE_TTL = 3 * 60 * 1000;
+
+function hydrateDashboardCache() {
+  const cached = readCachedJson("/api/dashboard") ?? readStaleCachedJson("/api/dashboard");
+  if (!cached) return null;
+  return {
+    filterData: cached.filterData ?? null,
+    aiInsights: Array.isArray(cached.aiInsights) ? cached.aiInsights : [],
+    revenueSeries: cached.revenueSeries?.length ? cached.revenueSeries : [],
+  };
+}
+
+function hydrateTeamCache() {
+  const cached = readCachedJson("/api/team/employees") ?? readStaleCachedJson("/api/team/employees");
+  if (cached?.success && cached.employees?.length) return cached.employees;
+  return [];
+}
+
+function hydrateActivityCache() {
+  const cached = readCachedJson("/api/activity") ?? readStaleCachedJson("/api/activity");
+  if (!cached?.success || !cached.activities?.length) return null;
+  return cached.activities.slice(0, 8).map((row) => ({
+    text: row.user_name ? `${row.action} — ${row.user_name}` : row.action,
+    createdAt: row.created_at,
+  }));
+}
 
 const EMPTY_FILTER_RANGE = {
   kpis: [
@@ -2186,14 +2213,16 @@ export default function Dashboard() {
   const [lead,            setLead]           = useState(null);
   const { preset } = useDateRange();
   const [selectedService, setSelectedService] = useState("All Services");
-  const [apiFilterData, setApiFilterData] = useState(null);
-  const [aiInsights, setAiInsights] = useState([]);
-  const [teamEmployees, setTeamEmployees] = useState([]);
-  const [chartRevenue, setChartRevenue] = useState([]);
+  const initialDash = hydrateDashboardCache();
+  const [apiFilterData, setApiFilterData] = useState(initialDash?.filterData ?? null);
+  const [aiInsights, setAiInsights] = useState(initialDash?.aiInsights ?? []);
+  const [teamEmployees, setTeamEmployees] = useState(() => hydrateTeamCache());
+  const [chartRevenue, setChartRevenue] = useState(initialDash?.revenueSeries ?? []);
   const [pipelineStats, setPipelineStats] = useState(null);
   const [pipelineLoading, setPipelineLoading] = useState(true);
-  const [liveActivity, setLiveActivity] = useState(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [liveActivity, setLiveActivity] = useState(() => hydrateActivityCache());
+  const [dashboardLoading, setDashboardLoading] = useState(!initialDash?.filterData);
+  const [dashboardError, setDashboardError] = useState(null);
 
   const filterKey = preset === "custom" ? "week" : preset;
   const mergedFilter = mergeFilterData(FILTER_DATA, apiFilterData);
@@ -2213,34 +2242,47 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    setDashboardLoading(true);
-    (async () => {
+
+    async function applyDashboardPayload(data) {
+      if (!data || cancelled) return;
+      if (data.filterData) setApiFilterData(data.filterData);
+      if (Array.isArray(data.aiInsights)) setAiInsights(data.aiInsights);
+      if (data.revenueSeries?.length) setChartRevenue(data.revenueSeries);
+      else setChartRevenue([]);
+      setDashboardError(null);
+    }
+
+    async function loadDashboardBundle() {
+      if (!apiFilterData) setDashboardLoading(true);
       try {
-        const data = await apiGet("/api/dashboard", { skipCache: true, cacheTtl: 0 });
+        const data = await apiGet("/api/dashboard", { cacheTtl: ADMIN_DASH_CACHE_TTL });
+        await applyDashboardPayload(data);
+      } catch (err) {
         if (cancelled) return;
-        if (data.filterData) setApiFilterData(data.filterData);
-        if (Array.isArray(data.aiInsights)) setAiInsights(data.aiInsights);
-        if (data.revenueSeries?.length) setChartRevenue(data.revenueSeries);
-        else setChartRevenue([]);
-      } catch {
-        if (!cancelled) {
-          setApiFilterData(EMPTY_FILTER_DATA);
-          setAiInsights([]);
-          setChartRevenue([]);
+        const cached = readStaleCachedJson("/api/dashboard");
+        if (cached?.filterData) {
+          await applyDashboardPayload(cached);
+        } else if (!apiFilterData) {
+          setDashboardError(err?.message || "Could not load dashboard data");
         }
       } finally {
         if (!cancelled) setDashboardLoading(false);
       }
+
       try {
-        const team = await apiGet("/api/team/employees", { skipCache: true, cacheTtl: 0 });
+        const team = await apiGet("/api/team/employees", { cacheTtl: ADMIN_DASH_CACHE_TTL });
         if (!cancelled && team.success && team.employees?.length) {
           setTeamEmployees(team.employees);
         }
       } catch {
-        // ignore
+        if (!cancelled) {
+          const cachedTeam = hydrateTeamCache();
+          if (cachedTeam.length) setTeamEmployees(cachedTeam);
+        }
       }
+
       try {
-        const activity = await apiGet("/api/activity", { skipCache: true, cacheTtl: 0 });
+        const activity = await apiGet("/api/activity", { cacheTtl: ADMIN_DASH_CACHE_TTL });
         if (!cancelled && activity?.success && activity.activities?.length) {
           setLiveActivity(
             activity.activities.slice(0, 8).map((row) => ({
@@ -2250,22 +2292,31 @@ export default function Dashboard() {
           );
         }
       } catch {
-        // ignore
+        if (!cancelled) {
+          const cachedActivity = hydrateActivityCache();
+          if (cachedActivity?.length) setLiveActivity(cachedActivity);
+        }
       }
-    })();
+    }
+
+    loadDashboardBundle();
     return () => { cancelled = true; };
-  }, [filterKey]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     setPipelineLoading(true);
     const params = new URLSearchParams({ range: filterKey, service: selectedService });
-    apiGet(`/api/dashboard/pipeline-status?${params.toString()}`, { skipCache: true, cacheTtl: 0 })
+    apiGet(`/api/dashboard/pipeline-status?${params.toString()}`, { cacheTtl: ADMIN_DASH_CACHE_TTL })
       .then((data) => {
         if (!cancelled && data?.success) setPipelineStats(data);
       })
       .catch(() => {
-        if (!cancelled) setPipelineStats({ success: true, ...buildEmptyPipelineGrid() });
+        if (!cancelled) {
+          const cached = readStaleCachedJson(`/api/dashboard/pipeline-status?${params.toString()}`);
+          if (cached?.success) setPipelineStats(cached);
+          else setPipelineStats({ success: true, ...buildEmptyPipelineGrid() });
+        }
       })
       .finally(() => {
         if (!cancelled) setPipelineLoading(false);
@@ -2282,7 +2333,20 @@ export default function Dashboard() {
   return (
     <div className="space-y-4 sm:space-y-5 page-shell min-w-0">
 
-      <KPICardsRow kpiData={dashboardLoading ? EMPTY_FILTER_RANGE.kpis : fd.kpis} filterKey={filterKey} />
+      {dashboardError && !apiFilterData && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="text-sm font-semibold text-rose-800">{dashboardError}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-[#be123c] text-white text-xs font-bold hover:bg-[#a20f32]"
+          >
+            Retry load
+          </button>
+        </div>
+      )}
+
+      <KPICardsRow kpiData={dashboardLoading && !apiFilterData ? EMPTY_FILTER_RANGE.kpis : fd.kpis} filterKey={filterKey} />
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,_36%)] gap-3 sm:gap-4 items-start min-w-0">
 

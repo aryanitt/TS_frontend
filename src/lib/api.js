@@ -33,12 +33,12 @@ function isLocalDevHost() {
   return host === "localhost" || host === "127.0.0.1";
 }
 
-/** Deployed browser builds call Hostinger directly for auth (avoids shared Vercel proxy IP). */
-function shouldUseDirectAuthUrl() {
+/** Deployed browser builds call Hostinger directly (avoids shared Vercel proxy IP 429s). */
+function shouldUseDirectBackendUrl() {
   return typeof window !== "undefined" && !isLocalDevHost();
 }
 
-function resolveDirectAuthBase() {
+function resolveDirectApiBase() {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl != null && String(envUrl).trim() !== "") {
     return String(envUrl).replace(/\/$/, "");
@@ -72,10 +72,10 @@ export function shouldPersistToApi(usingApi = false) {
 export function apiUrl(path) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   if (typeof window !== "undefined") {
-    // Auth hits Hostinger directly so concurrent logins are not throttled by one
-    // shared Vercel proxy IP (Hostinger returns 429 for burst traffic on one IP).
-    if (shouldUseDirectAuthUrl() && isAuthApiPath(normalized)) {
-      return `${resolveDirectAuthBase()}${normalized}`;
+    // Production browsers call Hostinger directly. Vercel /api rewrites share one
+    // egress IP; Hostinger rate-limits bursts (429) and the dashboard shows zeros.
+    if (shouldUseDirectBackendUrl()) {
+      return `${resolveDirectApiBase()}${normalized}`;
     }
     return normalized;
   }
@@ -100,6 +100,28 @@ function readSession(key) {
   } catch {
     return null;
   }
+}
+
+function readStaleSession(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readStaleCache(key) {
+  const mem = memoryCache.get(key);
+  if (mem?.data != null) return mem.data;
+  return readStaleSession(key);
+}
+
+function staleGetFallback(key) {
+  const stale = readStaleCache(key);
+  return stale != null ? stale : null;
 }
 
 function writeSession(key, data, ttl) {
@@ -280,7 +302,7 @@ export async function apiJson(path, options = {}) {
   }
 
   let response;
-  const skipThrottle = httpMethod !== "GET" || isAuthApiPath(path);
+  const skipThrottle = httpMethod !== "GET";
   try {
     response = await performFetch(url, {
       ...fetchOptions,
@@ -291,14 +313,16 @@ export async function apiJson(path, options = {}) {
   } catch (err) {
     const isNetwork = err instanceof TypeError
       || String(err?.message || "").toLowerCase().includes("failed to fetch");
+    if (isGet && isNetwork) {
+      const stale = staleGetFallback(key);
+      if (stale != null) return stale;
+    }
     if (!isNetwork) throw err;
-    const target = typeof window !== "undefined"
-      ? `${window.location.origin}${apiUrl(path).split("?")[0]}`
-      : apiUrl(path);
+    const target = apiUrl(path).split("?")[0];
     throw new Error(
       `Cannot reach the API at ${target}. `
       + (typeof window !== "undefined"
-        ? "Redeploy the frontend and ensure VITE_API_URL is empty in Vercel (uses /api proxy). "
+        ? "Check your connection and that the Hostinger backend is running. "
           + "If testing locally, start the backend: cd backend && npm run dev"
         : "Check your connection and backend deploy."),
     );
@@ -333,6 +357,10 @@ export async function apiJson(path, options = {}) {
         ...fetchOptions,
       });
     }
+    if (isGet && response.status === 429) {
+      const stale = staleGetFallback(key);
+      if (stale != null) return stale;
+    }
     const err = new Error(describeNonJsonResponse(response.status, contentType, preview));
     err.status = response.status;
     throw err;
@@ -361,6 +389,10 @@ export async function apiJson(path, options = {}) {
         _retry429: _retry429 + 1,
         ...fetchOptions,
       });
+    }
+    if (isGet && response.status === 429) {
+      const stale = staleGetFallback(key);
+      if (stale != null) return stale;
     }
     const message = formatApiError(data, response.statusText || "Request failed");
     const err = new Error(message);
@@ -430,4 +462,13 @@ export function readCachedJson(path) {
   const mem = memoryCache.get(key);
   if (mem && Date.now() < mem.expires) return mem.data;
   return readSession(key);
+}
+
+/** Read last cached GET payload even if TTL expired (429 / offline fallback). */
+export function readStaleCachedJson(path) {
+  const url = apiUrl(path);
+  const key = cacheKey(url);
+  const fresh = readCachedJson(path);
+  if (fresh != null) return fresh;
+  return readStaleCache(key);
 }
