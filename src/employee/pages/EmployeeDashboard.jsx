@@ -23,6 +23,8 @@ import { EMP_PAGE } from "../../lib/employeeLayout.js";
 import useIsMobile from "../../lib/useIsMobile.js";
 import { formatGreeting } from "../../lib/greeting.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
+import CallyzerStatsPanel from "../../components/CallyzerStatsPanel.jsx";
+import { useCallyzerStats } from "../../lib/useCallyzerStats.js";
 
 const PIPE_FILTERS = [
   { id: "all", label: "All" },
@@ -71,6 +73,9 @@ export default function EmployeeDashboard() {
   const [pipeFilter, setPipeFilter] = useState("all");
   const [agendaDone, setAgendaDone] = useState({});
 
+  const { stats: callyzerStats, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
+    useCallyzerStats(employee?.id, period, Boolean(employee?.id));
+
   const pipeline = useMemo(() => buildPipelineChartFromLeads(leads), [leads]);
   const sourceChart = useMemo(() => buildSourceChartFromLeads(leads), [leads]);
   const summary = useMemo(() => getEmpPipelineSummary(leads), [leads]);
@@ -87,7 +92,7 @@ export default function EmployeeDashboard() {
   const tasksDue = todayTasks.filter((t) => t.status !== "done" && t.status !== "completed").length;
   const tasksDone = todayTasks.filter((t) => t.status === "done" || t.status === "completed").length;
   const hotFollowUps = followUps.filter((f) => !f.done && (f.urgency === "overdue" || f.urgency === "today")).length;
-  const callsToday = filterCallsForPeriod(calls, "today").length;
+  const callsToday = callyzerStats?.totalCalls ?? filterCallsForPeriod(calls, "today").length;
   const callsTarget = employee.callsTarget || 60;
   const callPct = callsTarget ? Math.min(100, Math.round((callsToday / callsTarget) * 100)) : 0;
 
@@ -253,6 +258,16 @@ export default function EmployeeDashboard() {
           </button>
         ))}
       </div>
+
+      {callyzerConfigured && (
+        <CallyzerStatsPanel
+          stats={callyzerStats}
+          loading={callyzerLoading}
+          configured={callyzerConfigured}
+          message={callyzerMessage}
+          subtitle={`${period} · synced from Callyzer device`}
+        />
+      )}
 
       {/* Main grid */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,_36%)] gap-3 sm:gap-4 items-start">

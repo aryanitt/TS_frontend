@@ -6,6 +6,8 @@ import { apiGet, apiPost, apiDelete, invalidateCache } from "../lib/api.js";
 import { formatCashINR, formatCashDateTime, resolveSlipUrl } from "../components/CashCollectedPanel.jsx";
 import { useDateRange } from "../context/DateRangeContext.jsx";
 import EmployeeDoodleAvatar from "../employee/components/EmployeeDoodleAvatar.jsx";
+import CallyzerStatsPanel, { CallyzerTeamTable } from "../components/CallyzerStatsPanel.jsx";
+import { useCallyzerStats, useCallyzerTeamStats } from "../lib/useCallyzerStats.js";
 // ─── inject global styles ────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("__crm-styles-v2")) {
   const s = document.createElement("style");
@@ -1151,8 +1153,11 @@ function MemberForm({ fields, errors, set, blur }) {
               style={inputBase(false)}
               value={fields.callyserId}
               onChange={(e) => set("callyserId", e.target.value)}
-              placeholder="Optional"
+              placeholder="91-9462265230 (from Callyzer employee phone)"
             />
+            <p style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
+              Copy from Callyzer → Employees list. Example: Sushmit Air (+91-9462265230) → enter <strong>91-9462265230</strong>
+            </p>
           </div>
           <div>
             <label style={labelStyle}>Employee ID</label>
@@ -2052,6 +2057,8 @@ function EmpDetail({ emp, onEdit, onDelete }) {
   }, []);
 
   const { leads, stats, activity, funnel, stageBreakdown, loading, refresh, lastRefreshed } = useEmployeeLeads(activeEmp);
+  const { stats: callyzerStats, loading: callyzerLoading, configured: callyzerConfigured, message: callyzerMessage } =
+    useCallyzerStats(activeEmp?.id, "today", Boolean(activeEmp?.id));
 
   // KRA & Remuneration Calculator States
   const [baseSalary, setBaseSalary] = useState(12000);
@@ -2091,11 +2098,11 @@ function EmpDetail({ emp, onEdit, onDelete }) {
     setCashW(parseFloat(activeEmp.cashWeightage || activeEmp.cash_weightage) || 0);
 
     const achieved = activeEmp.achieved || {};
-    setCallA(achieved.calls ?? stats?.contacted ?? 0);
+    setCallA(callyzerStats?.totalCalls ?? achieved.calls ?? stats?.contacted ?? 0);
     setLeadA(achieved.qualifiedLeads ?? stats?.qualified ?? 0);
     setMeetA(achieved.meetings ?? stats?.totalMeetings ?? 0);
     setCashA(achieved.cash ?? stats?.revenue ?? 0);
-  }, [activeEmp, stats]);
+  }, [activeEmp, stats, callyzerStats]);
 
   const parseVal = (val) => {
     const parsed = parseFloat(val);
@@ -2428,6 +2435,19 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           </div>
         ))}
       </div>
+
+      {callyzerConfigured && (
+        <div style={{ marginBottom: compact ? 10 : 14 }}>
+          <CallyzerStatsPanel
+            stats={callyzerStats}
+            loading={callyzerLoading}
+            configured={callyzerConfigured}
+            message={callyzerMessage}
+            title="Callyzer Call Stats (Today)"
+            compact
+          />
+        </div>
+      )}
 
       {/* ── KRA & Compensation Calculator Card ── */}
       <GlassCard className={compact ? "p-3" : "p-5"}>
@@ -3509,6 +3529,9 @@ export default function Team() {
   const [newCredentials, setNewCredentials] = useState(null);
   const [newMemberName, setNewMemberName] = useState("");
   const [kpiData, setKpiData] = useState(null);
+  const [callyzerTeamPeriod, setCallyzerTeamPeriod] = useState("today");
+  const { stats: callyzerTeamStats, loading: callyzerTeamLoading, configured: callyzerTeamConfigured } =
+    useCallyzerTeamStats(callyzerTeamPeriod, true);
 
   useEffect(() => {
     if (new URLSearchParams(location.search).get("action") === "addMember") {
@@ -3794,6 +3817,34 @@ export default function Team() {
           </button>
         </div>
       </GlassCard>
+
+      {callyzerTeamConfigured && (
+        <GlassCard className="p-3 sm:p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Callyzer Team Call Report</h3>
+              <p className="text-[11px] text-slate-500">Live stats from Callyzer — same data as your Callyzer dashboard</p>
+            </div>
+            <div className="flex gap-1">
+              {["today", "week", "month"].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setCallyzerTeamPeriod(p)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                    callyzerTeamPeriod === p
+                      ? "bg-rose-600 text-white"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {p === "today" ? "Today" : p === "week" ? "Week" : "Month"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <CallyzerTeamTable stats={callyzerTeamStats} loading={callyzerTeamLoading} />
+        </GlassCard>
+      )}
 
       {/* ── Member cards list ── */}
       <div
