@@ -143,6 +143,7 @@ export default function EmployeeCallAssistant() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const urlLead = searchParams.get("lead");
+  const urlLeadId = searchParams.get("leadId");
   const urlSop = searchParams.get("sop");
   const urlFollowUp = searchParams.get("followUp");
   
@@ -191,10 +192,14 @@ export default function EmployeeCallAssistant() {
   const [sopPickerOpen, setSopPickerOpen] = useState(false);
 
   const matchedLead = useMemo(() => {
-    const q = String(leadName || "").trim().toLowerCase();
+    if (urlLeadId) {
+      const byId = leads.find((l) => String(l.id) === String(urlLeadId));
+      if (byId) return byId;
+    }
+    const q = String(leadName || urlLead || "").trim().toLowerCase();
     if (!q) return null;
     return leads.find((l) => String(l?.name || "").trim().toLowerCase() === q) || null;
-  }, [leads, leadName]);
+  }, [leads, leadName, urlLead, urlLeadId]);
 
   const companyName = matchedLead ? matchedLead.company : "TechSales Lead";
 

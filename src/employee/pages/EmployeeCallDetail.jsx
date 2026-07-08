@@ -123,10 +123,11 @@ export default function EmployeeCallDetail() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { calls = [], leads = [], addActivityRecord, scheduleFollowUp } = useEmployee();
-  const callId = Number(searchParams.get("id"));
+  const callId = searchParams.get("id");
 
   // Find active call log record
   const call = useMemo(() => {
+    if (!callId) return null;
     return calls.find((c) => String(c.id) === String(callId));
   }, [calls, callId]);
 
@@ -172,7 +173,9 @@ export default function EmployeeCallDetail() {
   // Visual audio player states
   const durationSec = useMemo(() => {
     if (!call) return 0;
-    return parseDurationToSeconds(call.duration);
+    const parsed = parseDurationToSeconds(call.duration);
+    if (call.recordingUrl) return parsed || 1;
+    return parsed;
   }, [call]);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -396,12 +399,21 @@ export default function EmployeeCallDetail() {
               <Volume2 className="w-3.5 h-3.5 text-rose-600 animate-pulse" /> Voice Recording Playback
             </h3>
             
-            {durationSec === 0 ? (
+            {!call.recordingUrl && durationSec === 0 ? (
               <div className="rounded-xl border border-rose-100 bg-rose-50/20 p-5 text-center space-y-1.5">
                 <AlertCircle className="w-7 h-7 text-amber-500 mx-auto" />
                 <p className="text-xs font-bold text-slate-650">No Recording Available</p>
                 <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
                   Audio recordings are not registered for calls with no outcome or calls that were missed/rejected.
+                </p>
+              </div>
+            ) : call.recordingUrl ? (
+              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex flex-col gap-2.5">
+                <audio controls preload="metadata" className="w-full" src={call.recordingUrl}>
+                  Your browser does not support audio playback.
+                </audio>
+                <p className="text-[10px] text-slate-500 font-medium">
+                  Recording synced from Callyzer for this lead call.
                 </p>
               </div>
             ) : (

@@ -1050,6 +1050,14 @@ export function callToApiPayload(call, employeeId) {
   };
 }
 
+export function phonesMatchLoose(a, b) {
+  const da = String(a || "").replace(/\D/g, "");
+  const db = String(b || "").replace(/\D/g, "");
+  if (!da || !db) return false;
+  if (da === db) return true;
+  return da.slice(-10) === db.slice(-10);
+}
+
 export function callFromApi(apiCall, leads = []) {
   const lead = leads.find((l) => String(l.id) === String(apiCall.leadId));
   const created = apiCall.startedAt || apiCall.createdAt;
@@ -1076,7 +1084,7 @@ export function callFromApi(apiCall, leads = []) {
   return {
     id: apiCall.id,
     leadId: apiCall.leadId,
-    name: lead?.name || lead?.leadName || "Unknown Lead",
+    name: lead?.name || lead?.leadName || apiCall.clientName || "Unknown Lead",
     company: lead?.company || lead?.companyName || "—",
     duration: formatDurationFromSeconds(apiCall.durationSec),
     type: dir,
@@ -1088,9 +1096,11 @@ export function callFromApi(apiCall, leads = []) {
     hasRec: Boolean(apiCall.recordingUrl) || Boolean(apiCall.aiSummary || apiCall.notes),
     rating: 0,
     mood: "neutral",
-    phone: lead?.phone || "",
+    phone: lead?.phone || apiCall.clientPhone || "",
     note: apiCall.aiSummary || apiCall.notes || "",
     sopId: apiCall.sopId,
+    recordingUrl: apiCall.recordingUrl || null,
+    source: apiCall.source || null,
   };
 }
 

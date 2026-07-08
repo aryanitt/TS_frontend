@@ -1202,6 +1202,34 @@ export function EmployeeProvider({ children }) {
     }
   }, [employee, loadEmployeeWorkspace, refreshLeads, refreshTasks]);
 
+  const startCallyzerCall = useCallback(async (lead) => {
+    if (!lead?.id) {
+      toast.error("Select a valid lead to call");
+      return null;
+    }
+    if (!lead.phone) {
+      toast.error("Add a phone number to this lead before calling");
+      return null;
+    }
+
+    const employeeId = await resolveApiEmployeeId(employee.id, employee);
+    try {
+      const res = await apiPost(
+        "/api/v1/employee/callyzer/start-call",
+        { leadId: lead.id, employeeId },
+        { headers: getCrmHeaders() },
+      );
+      const data = unwrapApiData(res) || res?.data || res;
+      if (data?.dialUrl) {
+        window.location.href = data.dialUrl;
+      }
+      return data;
+    } catch (err) {
+      toast.error(err.message || "Could not start Callyzer call");
+      return null;
+    }
+  }, [employee, resolveApiEmployeeId]);
+
   const value = useMemo(() => ({
     employee,
     tasks,
@@ -1230,6 +1258,7 @@ export function EmployeeProvider({ children }) {
     calls,
     setCalls,
     addCallRecord,
+    startCallyzerCall,
     activities,
     addActivityRecord,
     sops,
@@ -1248,7 +1277,7 @@ export function EmployeeProvider({ children }) {
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
     syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, refreshLeads,
     reassignLead, teamEmployees, refreshTeamEmployees,
-    usingApi, calls, addCallRecord, activities, addActivityRecord, sops, refreshSops,
+    usingApi, calls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
     workspaceError, reloadWorkspace,
   ]);

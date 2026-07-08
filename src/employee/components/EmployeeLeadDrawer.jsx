@@ -6,7 +6,7 @@ import {
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer } from "../../components/Primitives.jsx";
-import { LEAD_STATUS_LABELS, EMP_TEAM, EMP_LEAD_TEMPERATURES } from "../../data/employeeMock.js";
+import { LEAD_STATUS_LABELS, EMP_TEAM, EMP_LEAD_TEMPERATURES, phonesMatchLoose } from "../../data/employeeMock.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { LeadStatusBadge, AvatarCircle, FormLabel, FormTextarea } from "./EmpUI.jsx";
 import CashCollectedPanel from "../../components/CashCollectedPanel.jsx";
@@ -32,6 +32,7 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
     refreshTeamEmployees,
     updateLeadTemperature,
     addActivityRecord,
+    startCallyzerCall,
   } = useEmployee();
 
   const liveLead = useMemo(
@@ -40,8 +41,12 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
   );
 
   const leadCalls = useMemo(() => {
-    return calls.filter((c) => String(c.leadId) === String(liveLead.id));
-  }, [calls, liveLead.id]);
+    return calls.filter((c) => {
+      if (String(c.leadId) === String(liveLead.id)) return true;
+      if (liveLead.phone && c.phone && phonesMatchLoose(c.phone, liveLead.phone)) return true;
+      return false;
+    });
+  }, [calls, liveLead.id, liveLead.phone]);
 
   const leadActivities = useMemo(() => {
     return activities[liveLead.id] || [];
@@ -265,9 +270,13 @@ export default function EmployeeLeadDrawer({ lead, onClose }) {
         <div className="flex gap-2.5">
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              const session = await startCallyzerCall(liveLead);
               onClose();
-              navigate(`/employee/call-assistant?lead=${encodeURIComponent(liveLead.name)}`);
+              const leadQuery = encodeURIComponent(liveLead.name);
+              const leadIdQuery = `leadId=${liveLead.id}`;
+              navigate(`/employee/call-assistant?${leadIdQuery}&lead=${leadQuery}`);
+              if (session?.message) toast.success(session.message);
             }}
             className="flex-1 h-10 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition shadow-[0_4px_12px_rgba(220,38,38,0.2)] flex items-center justify-center gap-1.5 cursor-pointer"
           >
