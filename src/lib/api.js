@@ -35,7 +35,7 @@ function isLocalDevHost() {
 
 /** Deployed browser builds call Hostinger directly (avoids shared Vercel proxy IP 429s). */
 function shouldUseDirectBackendUrl() {
-  return typeof window !== "undefined" && !isLocalDevHost();
+  return typeof window !== "undefined";
 }
 
 function resolveDirectApiBase() {
@@ -244,15 +244,27 @@ function parseApiResponseBody(text, contentType) {
 function describeNonJsonResponse(status, contentType, preview) {
   if (preview.startsWith("<!DOCTYPE") || preview.startsWith("<html")) {
     if (status === 404) {
-      return "Auth API not found (404). Deploy the latest backend with auth routes to Hostinger.";
+      return "Auth API not found (404). Start the backend: cd backend && npm run dev";
     }
-    return "API request hit the frontend instead of the backend. Check VITE_API_URL.";
+    return "API request hit the frontend instead of the backend. Start the backend on port 5000.";
   }
   if (status === 429) return "Too many API requests — wait a moment and try again.";
   if (status === 502 || status === 503 || status === 504) {
-    return "Backend API is temporarily unavailable. Try again in a few seconds.";
+    if (preview.trim()) {
+      try {
+        const body = JSON.parse(preview);
+        if (body?.message) return body.message;
+      } catch {
+        /* fall through */
+      }
+    }
+    return "Backend API is temporarily unavailable. Start the backend (cd backend && npm run dev) and check DB credentials.";
   }
   if (status === 204 || !preview.trim()) {
+    const isJson = String(contentType || "").includes("application/json");
+    if (isJson) {
+      return "API returned an empty JSON response. Is the backend running on port 5000?";
+    }
     return `API returned ${status} with an empty response. Try again.`;
   }
   return `Expected JSON from API but got ${contentType || "unknown type"}`;
@@ -329,7 +341,7 @@ export async function apiJson(path, options = {}) {
   }
 
   const contentType = response.headers.get("content-type") || "";
-  const text = await response.text();
+  const text = await response.clone().text();
   const { parsed, data } = parseApiResponseBody(text, contentType);
 
   if (!parsed) {

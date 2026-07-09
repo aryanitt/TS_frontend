@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Plus, Users, Flame, CheckCircle2, ClipboardList, TrendingUp,
-  Phone, Calendar, ArrowRight, Zap, Target, ChevronRight,
+  Phone, Calendar, ArrowRight, Zap, Target, ChevronRight, MessageCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, LabelList } from "recharts";
@@ -16,6 +16,7 @@ import {
   getEmpPipelineSummary,
   getEmpAppToday,
   filterCallsForPeriod,
+  parseDurationToSeconds,
   LEAD_STATUS_LABELS,
 } from "../../data/employeeMock.js";
 import { AvatarCircle } from "../components/EmpUI.jsx";
@@ -96,6 +97,16 @@ export default function EmployeeDashboard() {
   const callsTarget = employee.callsTarget || 60;
   const callPct = callsTarget ? Math.min(100, Math.round((callsToday / callsTarget) * 100)) : 0;
 
+  const periodKey = period === "This Week" ? "week" : period === "This Month" ? "month" : "today";
+  const conversations5MinPlus = useMemo(() => {
+    if (callyzerStats?.conversations5MinPlus != null) {
+      return callyzerStats.conversations5MinPlus;
+    }
+    return filterCallsForPeriod(calls, periodKey).filter(
+      (c) => parseDurationToSeconds(c.duration) >= 300,
+    ).length;
+  }, [callyzerStats, calls, periodKey]);
+
   const statCards = useMemo(() => [
     {
       label: "Total Leads",
@@ -129,7 +140,17 @@ export default function EmployeeDashboard() {
       tone: "primary",
       link: "/employee/tasks",
     },
-  ], [summary, leads, tasksDue, tasksDone]);
+    {
+      label: "Total Conversation",
+      value: String(conversations5MinPlus),
+      change: callyzerStats?.conversations5MinDuration
+        ? `${callyzerStats.conversations5MinDuration} talk time`
+        : "Calls 5 min+",
+      icon: MessageCircle,
+      tone: "success",
+      link: "/employee/calls",
+    },
+  ], [summary, leads, tasksDue, tasksDone, conversations5MinPlus, callyzerStats]);
 
   const filteredPipeLeads = useMemo(() => {
     if (pipeFilter === "all") return null;
@@ -138,8 +159,8 @@ export default function EmployeeDashboard() {
 
   const pendingAgenda = agenda.filter((a) => !agendaDone[a.id]).length;
   const pipelineTotal = pipeline.reduce((s, p) => s + p.count, 0);
-  const convertedCount = pipeline.find((p) => p.label === "Converted")?.count ?? 0;
-  const convRate = pipelineTotal ? `${Math.round((convertedCount / pipelineTotal) * 100)}%` : "—";
+  const proposalSentCount = pipeline.find((p) => p.label === "Proposal Sent")?.count ?? 0;
+  const convRate = pipelineTotal ? `${Math.round((proposalSentCount / pipelineTotal) * 100)}%` : "—";
 
   const markAgendaDone = (itemId) => {
     setAgendaDone((prev) => ({ ...prev, [itemId]: true }));
@@ -234,7 +255,7 @@ export default function EmployeeDashboard() {
       </GlassCard>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
         {statCards.map((s) => (
           <button
             key={s.label}
@@ -285,8 +306,8 @@ export default function EmployeeDashboard() {
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-3 sm:mb-4">
               {[
                 { label: "In pipeline", val: pipelineTotal },
-                { label: "Converted", val: convertedCount },
-                { label: "Conv. rate", val: convRate },
+                { label: "Proposal Sent", val: proposalSentCount },
+                { label: "Close rate", val: convRate },
               ].map((s) => (
                 <div key={s.label} className="rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 px-2 py-1.5 sm:px-3 sm:py-2 text-center min-w-0">
                   <p className="text-sm sm:text-base font-black text-slate-900 tabular-nums">{s.val}</p>

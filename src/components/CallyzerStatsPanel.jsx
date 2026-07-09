@@ -81,6 +81,7 @@ export default function CallyzerStatsPanel({
         <Metric label="Never Attended" value={stats.neverAttended} tone="pink" />
         <Metric label="Client No Pickup" value={stats.notPickupByClient} tone="pink" />
         <Metric label="Unique Clients" value={stats.uniqueClients} tone="default" sub="Distinct numbers" />
+        <Metric label="5 Min+ Conversations" value={stats.conversations5MinPlus ?? 0} tone="green" sub={stats.conversations5MinDuration || "Connected calls ≥ 5 min"} />
       </div>
 
       {!compact && stats.lastCallLog?.client_name && (

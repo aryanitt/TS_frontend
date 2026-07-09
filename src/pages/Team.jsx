@@ -1245,13 +1245,39 @@ function MemberForm({ fields, errors, set, blur }) {
           <div key={label} style={{ marginBottom: 12 }}>
             <label style={labelStyle}>{label}</label>
             <div style={kpiBox}>
-              <input
-                style={{ ...inputBase(false), fontSize: 12 }}
-                placeholder="Target"
-                value={fields[t]}
-                onChange={(e) => set(t, e.target.value)}
-                inputMode="numeric"
-              />
+              {t === "cashTarget" ? (
+                <div style={{ position: "relative" }}>
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      fontSize: 12,
+                      color: "#be123c",
+                      fontWeight: 600,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    ₹
+                  </span>
+                  <input
+                    style={{ ...inputBase(false), fontSize: 12, paddingLeft: 22 }}
+                    placeholder="Target"
+                    value={fields[t]}
+                    onChange={(e) => set(t, e.target.value)}
+                    inputMode="numeric"
+                  />
+                </div>
+              ) : (
+                <input
+                  style={{ ...inputBase(false), fontSize: 12 }}
+                  placeholder="Target"
+                  value={fields[t]}
+                  onChange={(e) => set(t, e.target.value)}
+                  inputMode="numeric"
+                />
+              )}
               <input
                 style={{ ...inputBase(false), fontSize: 12 }}
                 placeholder="Weightage %"
@@ -1591,10 +1617,10 @@ function CredentialsModal({ open, credentials, memberName, onClose }) {
               borderRadius: 18,
               padding: 22,
               background: "#fff",
-              border: "1px solid #bbf7d0",
+              border: "1px solid #fecdd3",
             }}
           >
-            <p style={{ fontWeight: 700, fontSize: 15, color: "#15803d", marginBottom: 4 }}>
+            <p style={{ fontWeight: 700, fontSize: 15, color: "#be123c", marginBottom: 4 }}>
               Login credentials created
             </p>
             <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 }}>
@@ -1654,7 +1680,7 @@ function CredentialsModal({ open, credentials, memberName, onClose }) {
                   padding: "10px",
                   borderRadius: 10,
                   border: "none",
-                  background: "#16a34a",
+                  background: "#be123c",
                   color: "#fff",
                   fontSize: 12,
                   fontWeight: 700,
@@ -2340,7 +2366,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               cursor: "pointer",
               border: "1px solid #ffe4e6",
               color: "#be123c",
-              background: "var(--secondary)",
+              background: "#fff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2362,9 +2388,9 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               fontSize: compact ? 10 : 11.5,
               fontWeight: 700,
               cursor: "pointer",
-              border: "1px solid #ffe4e6",
-              color: "#ef4444",
-              background: "var(--secondary)",
+              border: "1px solid #ef4444",
+              color: "#fff",
+              background: "#ef4444",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2372,8 +2398,14 @@ function EmpDetail({ emp, onEdit, onDelete }) {
               flex: compact ? 1 : undefined,
               transition: "all .15s",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#fef2f2"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+            onMouseEnter={(e) => { 
+              e.currentTarget.style.background = "#dc2626"; 
+              e.currentTarget.style.borderColor = "#dc2626"; 
+            }}
+            onMouseLeave={(e) => { 
+              e.currentTarget.style.background = "#ef4444"; 
+              e.currentTarget.style.borderColor = "#ef4444"; 
+            }}
           >
             <Trash2 style={{ width: 11, height: 11 }} />
             Remove
@@ -2766,8 +2798,8 @@ function EmpDetail({ emp, onEdit, onDelete }) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: compact ? "minmax(96px, 34%) 1fr" : "200px 1fr",
-              gap: compact ? 6 : 14,
+              gridTemplateColumns: compact ? "minmax(96px, 34%) 1fr" : "minmax(110px, 1fr) 1.5fr",
+              gap: compact ? 6 : 10,
               alignItems: "center",
               minWidth: 0,
             }}
@@ -2775,7 +2807,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             {/* SVG funnel — left */}
             <div style={{
               width: "100%",
-              maxWidth: compact ? 120 : 200,
+              maxWidth: compact ? 120 : 180,
               justifySelf: compact ? "center" : "start",
               flexShrink: 0,
             }}>
@@ -2791,7 +2823,7 @@ function EmpDetail({ emp, onEdit, onDelete }) {
             <div style={{
               display: "flex",
               flexDirection: "column",
-              gap: compact ? 2 : 6,
+              gap: compact ? 2 : 4,
               justifyContent: "space-between",
               minWidth: 0,
               minHeight: compact ? 118 : undefined,
@@ -2802,9 +2834,9 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                 const colors = ["#be123c", "#e11d48", "#dc2626", "#c2185b", "#881337"];
                 const bgs = ["#fff1f2", "#fff5f6", "#fff8f8", "#fffafb", "#ffffff"];
                 const borders = ["#fecdd3", "#ffe4e6", "#ffe4e6", "#ffe4e6", "#fecdd3"];
-                const rowPad = compact ? "2px 6px" : "10px 12px";
-                const convLabel = compact && item.sub !== "Top Funnel"
-                  ? item.sub.replace(" Conversion", "")
+                const rowPad = compact ? "2px 6px" : "6px 10px";
+                const convLabel = item.sub !== "Top Funnel"
+                  ? item.sub.replace(" Conversion", " Conv")
                   : item.sub;
                 
                 return (
@@ -3026,16 +3058,43 @@ function EmpDetail({ emp, onEdit, onDelete }) {
                     </span>
                   </td>
                   <td style={{ padding: "12px 8px" }}>
-                    <div style={{ display: "flex", gap: 2.5 }}>
-                      {Array.from({ length: 4 }).map((_, tIdx) => (
-                        <div key={tIdx} style={{
-                          width: 4,
-                          height: 12,
-                          borderRadius: 2,
-                          background: tIdx < lead.temp ? (lead.priority === 'Hot' ? "#ef4444" : lead.priority === 'Warm' ? "#f59e0b" : "#22c55e") : "#f1f5f9"
-                        }} />
-                      ))}
-                    </div>
+                    {(() => {
+                      const temp = String(lead.priority || lead.temperature || "Medium").toLowerCase();
+                      const isHot = temp.includes("critical") || temp.includes("high") || temp.includes("hot") || lead.temp === 4;
+                      const isWarm = temp.includes("medium") || temp.includes("warm") || lead.temp === 3;
+                      
+                      let label = "Cold Lead";
+                      let color = "#2563eb";
+                      let bg = "#eff6ff";
+                      let border = "#bfdbfe";
+
+                      if (isHot) {
+                        label = "Hot Lead";
+                        color = "#be123c";
+                        bg = "#fff1f2";
+                        border = "#fecdd3";
+                      } else if (isWarm) {
+                        label = "Warm Lead";
+                        color = "#d97706";
+                        bg = "#fef3c7";
+                        border = "#fde68a";
+                      }
+
+                      return (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          color,
+                          background: bg,
+                          border: `1.2px solid ${border}`,
+                          whiteSpace: "nowrap"
+                        }}>
+                          {label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td style={{ padding: "12px 8px" }}>{lead.next}</td>
                   <td style={{ padding: "12px 8px", fontWeight: 700, color: "#1e293b" }}>{lead.potential}</td>
@@ -3784,7 +3843,7 @@ export default function Team() {
       <div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {kpis.map((k, i) => (
-            <div key={k.label}>
+            <div key={k.label} className="h-full">
               <KpiCard {...k} index={i} isActive={i === 0} />
             </div>
           ))}
@@ -3818,33 +3877,7 @@ export default function Team() {
         </div>
       </GlassCard>
 
-      {callyzerTeamConfigured && (
-        <GlassCard className="p-3 sm:p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Callyzer Team Call Report</h3>
-              <p className="text-[11px] text-slate-500">Live stats from Callyzer — same data as your Callyzer dashboard</p>
-            </div>
-            <div className="flex gap-1">
-              {["today", "week", "month"].map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setCallyzerTeamPeriod(p)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase ${
-                    callyzerTeamPeriod === p
-                      ? "bg-rose-600 text-white"
-                      : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {p === "today" ? "Today" : p === "week" ? "Week" : "Month"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <CallyzerTeamTable stats={callyzerTeamStats} loading={callyzerTeamLoading} />
-        </GlassCard>
-      )}
+
 
       {/* ── Member cards list ── */}
       <div

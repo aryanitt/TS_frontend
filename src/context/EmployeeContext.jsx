@@ -785,7 +785,7 @@ export function EmployeeProvider({ children }) {
           name,
           company: form.company || "—",
           status: form.status || "warm",
-          stage: form.stage || "Attempted",
+          stage: form.stage || "Conversation",
           source: form.source || "Website",
           budget: form.budget || "—",
           last: "Just now",

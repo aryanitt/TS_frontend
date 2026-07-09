@@ -427,7 +427,7 @@ const MOCK_STATS = {
   Cold: { Contacted: 19, Qualified: 6, Meeting: 4, Negotiation: 1, Conversion: 1 }
 };
 
-function SalesPipelineStatus() {
+function SalesPipelineStatus({ service, employee }) {
   const [stats,       setStats]       = useState(MOCK_STATS);
   const [stageTotals, setStageTotals] = useState({
     Contacted: 92, Qualified: 40, Meeting: 30, Negotiation: 12, Conversion: 10
@@ -439,7 +439,12 @@ function SalesPipelineStatus() {
   const bubbleRefs = useRef({});
 
   useEffect(() => {
-    apiGet("/api/sales/emp-leads/pipeline-stats")
+    // Pass filters to the backend
+    const q = new URLSearchParams();
+    if (service && service !== "All Services") q.append("service", service);
+    if (employee && employee !== "All Employees") q.append("employee", employee);
+
+    apiGet(`/api/sales/emp-leads/pipeline-stats?${q.toString()}`)
       .then(d => {
         if (d.success && d.grid && (d.source === "database" || d.source === "empty")) {
           setStats(d.grid);
@@ -448,7 +453,7 @@ function SalesPipelineStatus() {
         }
       })
       .catch(e => console.error("pipeline-stats failed", e));
-  }, []);
+  }, [service, employee]);
 
   const hotData = useMemo(() => STAGES.map(s => stats?.Hot?.[s] ?? 0), [stats]);
   const warmData = useMemo(() => STAGES.map(s => stats?.Warm?.[s] ?? 0), [stats]);
@@ -711,43 +716,172 @@ const opportunityCards = [
   { label: "Stuck at Negotiation", count: 6, rgb: "239,68,68" },
 ];
 
-function RevenueOpportunitySection() {
+function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmployee }) {
   const isMobile = useIsMobile();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTitle, setDrawerTitle] = useState("");
+  const [drawerLeads, setDrawerLeads] = useState([]);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+
+  const CATEGORY_KEY = {
+    "Not Contacted Leads": "not_contacted",
+    "Unqualified Leads": "unqualified",
+    "Meeting Not Scheduled": "no_meeting",
+    "Stuck at Negotiation": "stuck_negotiation",
+  };
+
+  const handleCardClick = async (label) => {
+    const category = CATEGORY_KEY[label];
+    if (!category) return;
+    setDrawerTitle(label);
+    setDrawerLeads([]);
+    setDrawerOpen(true);
+    setDrawerLoading(true);
+    try {
+      const q = new URLSearchParams({ category });
+      if (selectedEmployee && selectedEmployee !== "All Employees") q.append("employee", selectedEmployee);
+      if (selectedService && selectedService !== "All Services") q.append("service", selectedService);
+      const d = await apiGet(`/api/sales/emp-leads/opp-leads?${q.toString()}`);
+      if (d && d.success) setDrawerLeads(d.leads || []);
+    } catch (e) { console.error(e); }
+    finally { setDrawerLoading(false); }
+  };
+
+  const dynamicCards = [
+    { label: "Not Contacted Leads", count: oppData.notContacted ?? 14, rgb: "245,158,11" },
+    { label: "Unqualified Leads", count: oppData.unqualified ?? 22, rgb: "56,189,248" },
+    { label: "Meeting Not Scheduled", count: oppData.noMeeting ?? 9, rgb: "124,58,237" },
+    { label: "Stuck at Negotiation", count: oppData.stuckNegotiation ?? 6, rgb: "239,68,68" },
+  ];
 
   return (
-    <SectionCard
-      title={isMobile ? "Revenue Ops" : "Revenue Opportunities"}
-      subtitle={isMobile ? "Deal status counts" : "Smart distribution & deal status"}
-    >
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 min-w-0">
-        {opportunityCards.map((c, i) => (
-          <motion.div
-            key={c.label}
-            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 + 0.1 }}
-            whileHover={isMobile ? undefined : { y: -1 }}
-            className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl overflow-hidden relative cursor-default border min-w-0"
-            style={{
-              background: "#fff5f5",
-              borderColor: "#fecdd3",
-            }}
-          >
-            <div
-              className={`font-semibold text-gray-600 leading-tight line-clamp-2 ${isMobile ? "text-[10px] mb-1" : "text-[13px] mb-2"}`}
+    <>
+      <SectionCard
+        title={isMobile ? "Revenue Ops" : "Revenue Opportunities"}
+        subtitle={isMobile ? "Deal status counts" : "Smart distribution & deal status"}
+      >
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 min-w-0">
+          {dynamicCards.map((c, i) => (
+            <motion.div
+              key={c.label}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 + 0.1 }}
+              whileHover={{ y: -2, scale: 1.01 }}
+              onClick={() => handleCardClick(c.label)}
+              className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl overflow-hidden relative cursor-pointer border min-w-0 select-none"
+              style={{ background: "#fff5f5", borderColor: "#fecdd3" }}
             >
-              {c.label}
-            </div>
-            <div
-              className={`font-bold tabular-nums ${isMobile ? "text-xl" : "text-2xl"}`}
-              style={{ letterSpacing: "-0.03em", color: "#111827" }}
-            >
-              {c.count}
-            </div>
-          </motion.div>
-        ))}
-      </div>
-    </SectionCard>
+              <div className={`font-semibold text-gray-600 leading-tight line-clamp-2 ${isMobile ? "text-[10px] mb-1" : "text-[13px] mb-2"}`}>
+                {c.label}
+              </div>
+              <div className={`font-bold tabular-nums ${isMobile ? "text-xl" : "text-2xl"}`} style={{ letterSpacing: "-0.03em", color: "#111827" }}>
+                {c.count}
+              </div>
+              <div className="absolute bottom-2 right-3 text-[10px] text-rose-400 font-semibold">View →</div>
+            </motion.div>
+          ))}
+        </div>
+      </SectionCard>
+
+      {/* Leads Drawer */}
+      {ReactDOM.createPortal(
+        <AnimatePresence>
+          {drawerOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setDrawerOpen(false)}
+                className="fixed inset-0 bg-black/40 z-[9998]"
+              />
+              <motion.div
+                initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                className="fixed top-0 right-0 h-full w-full sm:w-[480px] z-[9999] flex flex-col"
+                style={{ background: "#fff", boxShadow: "-8px 0 40px rgba(0,0,0,0.15)" }}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "#fce7f3" }}>
+                  <div>
+                    <div className="text-base font-bold text-rose-700">{drawerTitle}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{drawerLeads.length} leads</div>
+                  </div>
+                  <button onClick={() => setDrawerOpen(false)} className="p-2 rounded-xl hover:bg-rose-50 transition">
+                    <X size={18} className="text-rose-500" />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {drawerLoading ? (
+                    <div className="flex flex-col items-center justify-center h-48 gap-3">
+                      <div className="w-8 h-8 rounded-full border-4 border-rose-200 border-t-rose-500 animate-spin" />
+                      <span className="text-sm text-gray-400">Loading leads…</span>
+                    </div>
+                  ) : drawerLeads.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-48 gap-2 text-gray-400">
+                      <span className="text-3xl">🎉</span>
+                      <span className="text-sm font-medium">No leads in this category</span>
+                    </div>
+                  ) : drawerLeads.map((lead) => {
+                    const name = lead.lead_name || "Unknown";
+                    const initials = name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase();
+                    return (
+                      <motion.div
+                        key={lead.id}
+                        initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                        className="p-4 rounded-xl border"
+                        style={{ background: "#fff5f5", borderColor: "#fecdd3" }}
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* Avatar */}
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-white"
+                            style={{ background: "linear-gradient(135deg,#be123c,#f43f5e)" }}>
+                            {initials}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-sm text-gray-900 truncate">{name}</div>
+                            <div className="text-xs text-gray-500 truncate">{lead.phone || "—"}</div>
+                          </div>
+                          {/* Status badge */}
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                            style={{ background: "#fce7f3", color: "#be123c" }}>
+                            {lead.pipeline_stage || lead.status || "New"}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {[
+                            { k: "City", v: lead.city },
+                            { k: "Assigned To", v: lead.assigned_to_name },
+                            { k: "Interactions", v: lead.interactions ?? 0 },
+                            { k: "Value", v: lead.expected_revenue ? `₹${Number(lead.expected_revenue).toLocaleString("en-IN")}` : "—" },
+                          ].map(({ k, v }) => (
+                            <div key={k} className="p-2 rounded-lg" style={{ background: "#fff" }}>
+                              <div className="text-[9px] text-gray-400 uppercase tracking-wider">{k}</div>
+                              <div className="text-xs font-semibold text-gray-800 mt-0.5 truncate">{v || "—"}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {lead.email && (
+                          <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+                            <Mail size={11} className="text-rose-400" />
+                            <span className="truncate">{lead.email}</span>
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+    </>
   );
 }
+
 
 function SalesAIInsights({ showToast }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -921,6 +1055,24 @@ export default function Sales() {
   const location = useLocation();
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
+  
+  const [selectedService, setSelectedService] = useState("All Services");
+  const [selectedEmployee, setSelectedEmployee] = useState("All Employees");
+  
+  const [servicesList, setServicesList] = useState([]);
+  const [employeesList, setEmployeesList] = useState([]);
+
+  useEffect(() => {
+    apiGet("/api/services").then(d => {
+      if (d && d.success) setServicesList(d.services || d.data || []);
+    }).catch(e => console.error(e));
+    apiGet("/api/team/employees").then(d => {
+      if (d && d.success) setEmployeesList(d.employees || d.data || []);
+    }).catch(e => console.error(e));
+  }, []);
+
+  const [kpiData, setKpiData] = useState([]);
+  const [oppData, setOppData] = useState({});
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -935,17 +1087,58 @@ export default function Sales() {
     navigate(location.pathname, { replace: true });
   };
 
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (selectedService && selectedService !== "All Services") q.append("service", selectedService);
+    if (selectedEmployee && selectedEmployee !== "All Employees") q.append("employee", selectedEmployee);
+
+    apiGet(`/api/sales/emp-leads/sales-kpis?${q.toString()}`)
+      .then(d => {
+        if (d && d.success) {
+          setKpiData(d.kpiData || []);
+          setOppData(d.oppData || {});
+        }
+      }).catch(e => console.error(e));
+  }, [selectedService, selectedEmployee]);
   return (
     <div className="space-y-4 sm:space-y-6 page-shell min-w-0">
+      
+      {/* ── Filters ── */}
+      <div className="flex flex-col sm:flex-row gap-3 items-center bg-white p-3 sm:px-5 rounded-2xl shadow-sm border border-rose-100">
+        <div className="text-sm font-bold text-rose-700 whitespace-nowrap mr-2">Filters:</div>
+        
+        <select 
+          className="w-full sm:w-auto bg-rose-50/50 border border-rose-200 text-gray-800 text-sm rounded-xl px-4 py-2 outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400 transition"
+          value={selectedService}
+          onChange={e => setSelectedService(e.target.value)}
+        >
+          <option value="All Services">Select Service (All)</option>
+          {servicesList.map(s => (
+            <option key={s.id} value={s.name}>{s.name}</option>
+          ))}
+        </select>
+
+        <select 
+          className="w-full sm:w-auto bg-rose-50/50 border border-rose-200 text-gray-800 text-sm rounded-xl px-4 py-2 outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400 transition"
+          value={selectedEmployee}
+          onChange={e => setSelectedEmployee(e.target.value)}
+        >
+          <option value="All Employees">Select Employee (All)</option>
+          {employeesList.map(e => (
+            <option key={e.id} value={e.name}>{e.name}</option>
+          ))}
+        </select>
+      </div>
+
       {/* ── 1. KPI row ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-2.5">
-        {salesKpis.map((k, i) => <PremiumKPICard key={k.label} k={k} index={i} />)}
+        {(kpiData.length ? kpiData : salesKpis).map((k, i) => <PremiumKPICard key={k.label} k={k} index={i} />)}
       </div>
 
       {/* ── 2. Revenue Opportunity + IMP Metrics (left) + AI Insights (right) ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-6 items-start min-w-0">
         <div className="xl:col-span-2 flex flex-col gap-3 sm:gap-6 min-w-0">
-          <RevenueOpportunitySection />
+          <RevenueOpportunitySection oppData={oppData} />
           <IMMetrics />
         </div>
 
@@ -953,7 +1146,7 @@ export default function Sales() {
       </div>
 
       {/* ── 3. Sales Pipeline Status ── */}
-      <SalesPipelineStatus />
+      <SalesPipelineStatus service={selectedService} employee={selectedEmployee} />
 
       <AddLeadDrawer
         open={addOpen}

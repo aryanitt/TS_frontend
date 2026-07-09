@@ -10,6 +10,40 @@ export const CALLYZER_PERIOD_MAP = {
   month: "month",
 };
 
+// Global in-flight deduplication + result cache (per key)
+const inflight = new Map();   // key → Promise
+const resultCache = new Map(); // key → { data, ts }
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function fetchCallyzerStats(employeeId, mapped) {
+  const key = `callyzer_emp_${employeeId}_${mapped}`;
+
+  // Return from cache if fresh
+  const cached = resultCache.get(key);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) {
+    return Promise.resolve(cached.data);
+  }
+
+  // De-duplicate in-flight requests
+  if (inflight.has(key)) return inflight.get(key);
+
+  const promise = apiGet(
+    `/api/v1/employee/${employeeId}/callyzer/stats?period=${mapped}`,
+    { cacheTtl: 300000 }
+  )
+    .then((res) => {
+      const data = res?.data ?? res;
+      resultCache.set(key, { data, ts: Date.now() });
+      return data;
+    })
+    .finally(() => {
+      inflight.delete(key);
+    });
+
+  inflight.set(key, promise);
+  return promise;
+}
+
 export function useCallyzerStats(employeeId, period, enabled = true) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -23,12 +57,9 @@ export function useCallyzerStats(employeeId, period, enabled = true) {
     let cancelled = false;
     setLoading(true);
 
-    apiGet(`/api/v1/employee/${employeeId}/callyzer/stats?period=${mapped}`, {
-      cacheTtl: 120000,
-    })
-      .then((res) => {
+    fetchCallyzerStats(employeeId, mapped)
+      .then((data) => {
         if (cancelled) return;
-        const data = res?.data ?? res;
         setConfigured(Boolean(data?.configured));
         setStats(data?.stats || null);
         setMessage(data?.message || null);
@@ -51,6 +82,37 @@ export function useCallyzerStats(employeeId, period, enabled = true) {
   return { stats, loading, configured, message };
 }
 
+// Global in-flight deduplication for team stats
+const teamInflight = new Map();
+const teamResultCache = new Map();
+
+function fetchCallyzerTeamStats(mapped) {
+  const key = `callyzer_team_${mapped}`;
+
+  const cached = teamResultCache.get(key);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) {
+    return Promise.resolve(cached.data);
+  }
+
+  if (teamInflight.has(key)) return teamInflight.get(key);
+
+  const promise = apiGet(
+    `/api/v1/callyzer/team-stats?period=${mapped}`,
+    { cacheTtl: 300000 }
+  )
+    .then((res) => {
+      const data = res?.data ?? res;
+      teamResultCache.set(key, { data, ts: Date.now() });
+      return data;
+    })
+    .finally(() => {
+      teamInflight.delete(key);
+    });
+
+  teamInflight.set(key, promise);
+  return promise;
+}
+
 export function useCallyzerTeamStats(period, enabled = true) {
   const [stats, setStats] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -63,10 +125,9 @@ export function useCallyzerTeamStats(period, enabled = true) {
     let cancelled = false;
     setLoading(true);
 
-    apiGet(`/api/v1/callyzer/team-stats?period=${mapped}`, { cacheTtl: 120000 })
-      .then((res) => {
+    fetchCallyzerTeamStats(mapped)
+      .then((data) => {
         if (cancelled) return;
-        const data = res?.data ?? res;
         setConfigured(Boolean(data?.configured));
         setStats(Array.isArray(data?.stats) ? data.stats : []);
       })
