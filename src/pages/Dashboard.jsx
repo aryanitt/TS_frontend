@@ -1344,7 +1344,7 @@ function LeadPipeline({ pipelineStats, filterKey, selectedService, onServiceChan
   const bubbleRefs = useRef({});
 
   const resolved = useMemo(() => {
-    if (pipelineStats?.grid && (pipelineStats.source === "database" || pipelineStats.source === "empty")) {
+    if (pipelineStats?.grid && ["database", "mock", "empty"].includes(pipelineStats.source)) {
       return pipelineStats;
     }
     return buildEmptyPipelineGrid();
