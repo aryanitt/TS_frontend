@@ -1138,7 +1138,7 @@ export default function Sales() {
       {/* ── 2. Revenue Opportunity + IMP Metrics (left) + AI Insights (right) ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-6 items-start min-w-0">
         <div className="xl:col-span-2 flex flex-col gap-3 sm:gap-6 min-w-0">
-          <RevenueOpportunitySection oppData={oppData} />
+          <RevenueOpportunitySection oppData={oppData} selectedService={selectedService} selectedEmployee={selectedEmployee} />
           <IMMetrics />
         </div>
 
