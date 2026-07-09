@@ -884,7 +884,7 @@ function RevenueOpportunitySection({ oppData = {}, selectedService, selectedEmpl
 }
 
 
-function SalesAIInsights({ showToast }) {
+function SalesAIInsights({ showToast, employee }) {
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = () => {
@@ -896,6 +896,62 @@ function SalesAIInsights({ showToast }) {
       }
     }, 600);
   };
+
+  const empLower = String(employee || "All Employees").toLowerCase();
+  const isAryan = empLower.includes("aryan");
+  const isRitik = empLower.includes("ritik");
+
+  const insightsList = useMemo(() => {
+    if (isAryan) return [];
+    if (isRitik) {
+      return [
+        {
+          title: "Ritik",
+          badge: "WARM LEAD",
+          tone: "info",
+          desc: "New lead assigned to you. Initial touchpoint scheduled. High conversion opportunity.",
+          actionText: "Call Lead",
+          actionToast: "Starting call to Ritik..."
+        }
+      ];
+    }
+    return [
+      {
+        title: "Nimbus Labs",
+        badge: "92% WIN PROB",
+        tone: "purple",
+        desc: "Proposal sent. High touchpoint activity from decision makers. Win probability is outstanding.",
+        actionText: "Notify Rep",
+        actionToast: "Rep notified to trigger follow-up workflow"
+      },
+      {
+        title: "Pylon Corp",
+        badge: "HIGH RISK",
+        tone: "warn",
+        desc: "Stalled in Negotiation for 5 days. High lead value (₹2.4L) makes this a priority intervention.",
+        actionText: "Send Reminder",
+        actionToast: "Follow-up email reminder sent to AE"
+      },
+      {
+        title: "Ritu Verma",
+        badge: "98% HOT",
+        tone: "success",
+        desc: "3 separate pricing page visits in last 24h. Unassigned lead in \"New Lead\" stage.",
+        actionText: "Assign AE",
+        actionToast: "Lead successfully assigned to Priya"
+      }
+    ];
+  }, [isAryan, isRitik]);
+
+  const funnelData = useMemo(() => {
+    if (isAryan) {
+      return { value: "₹0", growth: "0%", comparison: "0% vs Target", pct: "0%", matchText: "0% target match" };
+    }
+    if (isRitik) {
+      return { value: "₹10.0L", growth: "+12%", comparison: "+12% vs Target", pct: "40%", matchText: "40% target match" };
+    }
+    return { value: "₹8.4L", growth: "+14%", comparison: "+14% vs Target", pct: "34%", matchText: "34% target match" };
+  }, [isAryan, isRitik]);
 
   return (
     <SectionCard
@@ -911,98 +967,57 @@ function SalesAIInsights({ showToast }) {
       }
     >
       <div className="space-y-3.5">
-        {/* Card 1: Deal Acceleration */}
-        <motion.div
-          whileHover={{ y: -1.5 }}
-          className="p-4 rounded-xl border border-violet-100 flex items-start gap-3 shadow-sm bg-gradient-to-r from-violet-50/20 to-indigo-50/20 text-left"
-        >
-          <div className="w-8 h-8 rounded-full bg-violet-100/80 border border-violet-200 flex items-center justify-center text-violet-600 flex-shrink-0 mt-0.5 shadow-sm">
-            <Zap className="w-4 h-4" />
+        {insightsList.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/20 py-8 text-center">
+            <Sparkles className="w-7 h-7 text-rose-300 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-rose-800">No active insights</p>
+            <p className="text-xs text-rose-500 mt-1">Assign leads to start tracking deal predictions.</p>
           </div>
-          <div className="space-y-2 flex-1 min-w-0">
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-bold text-gray-800 leading-snug">Nimbus Labs</p>
-                <span className="text-[9px] font-black uppercase text-violet-600 bg-violet-100/60 px-1.5 py-0.2 rounded-md">
-                  92% Win Prob
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                Proposal sent. High touchpoint activity from decision makers. Win probability is outstanding.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => showToast && showToast("Rep notified to trigger follow-up workflow", "success")}
-                className="px-3.5 py-1 bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black rounded-lg transition-all shadow-sm active:scale-95"
-              >
-                Notify Rep
-              </button>
-            </div>
-          </div>
-        </motion.div>
+        ) : (
+          insightsList.map((item, idx) => {
+            const config = {
+              purple: { border: "border-violet-100", bg: "from-violet-50/20 to-indigo-50/20", iconBg: "bg-violet-100/80 border-violet-200 text-violet-600", textBg: "text-violet-600 bg-violet-100/60", icon: Zap },
+              warn: { border: "border-rose-100", bg: "from-rose-50/10 to-orange-50/10", iconBg: "bg-rose-50 border-rose-100 text-rose-600", textBg: "text-rose-600 bg-rose-50", icon: AlertTriangle },
+              success: { border: "border-emerald-100", bg: "from-emerald-50/10 to-teal-50/10", iconBg: "bg-emerald-50 border-emerald-100 text-emerald-600", textBg: "text-emerald-600 bg-emerald-50", icon: TrendingUp },
+              info: { border: "border-sky-100", bg: "from-sky-50/10 to-blue-50/10", iconBg: "bg-sky-50 border-sky-100 text-sky-600", textBg: "text-sky-600 bg-sky-50", icon: Zap }
+            }[item.tone] || { border: "border-rose-100", bg: "from-rose-50/10 to-orange-50/10", iconBg: "bg-rose-50 border-rose-100 text-rose-600", textBg: "text-rose-600 bg-rose-50", icon: AlertTriangle };
 
-        {/* Card 2: Risk Warning */}
-        <motion.div
-          whileHover={{ y: -1.5 }}
-          className="p-4 rounded-xl border border-rose-100 flex items-start gap-3 shadow-sm bg-gradient-to-r from-rose-50/10 to-orange-50/10 text-left"
-        >
-          <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0 mt-0.5 shadow-sm">
-            <AlertTriangle className="w-4 h-4 text-rose-600" />
-          </div>
-          <div className="space-y-2 flex-1 min-w-0">
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-bold text-gray-800 leading-snug">Pylon Corp</p>
-                <span className="text-[9px] font-black uppercase text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded-md">
-                  High Risk
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                Stalled in Negotiation for 5 days. High lead value (₹2.4L) makes this a priority intervention.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => showToast && showToast("Follow-up email reminder sent to AE", "success")}
-                className="px-3.5 py-1 border border-rose-600 text-rose-600 hover:bg-rose-50 text-[10px] font-black rounded-lg bg-white transition-all shadow-sm active:scale-95"
-              >
-                Send Reminder
-              </button>
-            </div>
-          </div>
-        </motion.div>
+            const Icon = config.icon;
 
-        {/* Card 3: Hot Lead Scoring */}
-        <motion.div
-          whileHover={{ y: -1.5 }}
-          className="p-4 rounded-xl border border-emerald-100 flex items-start gap-3 shadow-sm bg-gradient-to-r from-emerald-50/10 to-teal-50/10 text-left"
-        >
-          <div className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0 mt-0.5 shadow-sm">
-            <TrendingUp className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="space-y-2 flex-1 min-w-0">
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-bold text-gray-800 leading-snug">Ritu Verma</p>
-                <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded-md">
-                  98% Hot
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                3 separate pricing page visits in last 24h. Unassigned lead in "New Lead" stage.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => showToast && showToast("Lead successfully assigned to Priya", "success")}
-                className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded-lg transition-all shadow-sm active:scale-95"
+            return (
+              <motion.div
+                key={item.title}
+                whileHover={{ y: -1.5 }}
+                className={`p-4 rounded-xl border ${config.border} flex items-start gap-3 shadow-sm bg-gradient-to-r ${config.bg} text-left`}
               >
-                Assign AE
-              </button>
-            </div>
-          </div>
-        </motion.div>
+                <div className={`w-8 h-8 rounded-full ${config.iconBg} flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm`}>
+                  <Icon className="w-4 h-4" />
+                </div>
+                <div className="space-y-2 flex-1 min-w-0">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-gray-800 leading-snug">{item.title}</p>
+                      <span className={`text-[9px] font-black uppercase ${config.textBg} px-1.5 py-0.2 rounded-md`}>
+                        {item.badge}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+                      {item.desc}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => showToast && showToast(item.actionToast, "success")}
+                      className={`px-3.5 py-1 ${item.tone === "warn" ? "border border-rose-600 text-rose-600 hover:bg-rose-50 bg-white" : "bg-rose-700 hover:bg-rose-800 text-white"} text-[10px] font-black rounded-lg transition-all shadow-sm active:scale-95`}
+                    >
+                      {item.actionText}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })
+        )}
 
         {/* Card 4: Dark Predictive Forecast Card */}
         <motion.div
@@ -1015,10 +1030,10 @@ function SalesAIInsights({ showToast }) {
             <div>
               <p className="text-[8px] uppercase tracking-wider text-slate-400 font-extrabold">Predictive Win Funnel</p>
               <div className="flex items-baseline gap-1.5 mt-1">
-                <span className="text-xl font-black tracking-tight text-white">₹8.4L</span>
+                <span className="text-xl font-black tracking-tight text-white">{funnelData.value}</span>
                 <span className="text-[9px] text-emerald-400 font-bold flex items-center gap-0.5">
                   <TrendingUp className="w-2.5 h-2.5" />
-                  +14% vs Target
+                  {funnelData.comparison}
                 </span>
               </div>
             </div>
@@ -1030,12 +1045,12 @@ function SalesAIInsights({ showToast }) {
           <div className="space-y-1 mt-1">
             <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold">
               <span>Conversion Rate Prediction</span>
-              <span className="text-emerald-400">34% target match</span>
+              <span className="text-emerald-400">{funnelData.matchText}</span>
             </div>
             <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: "34%" }}
+                animate={{ width: funnelData.pct }}
                 transition={{ duration: 1, ease: "easeOut" }}
                 className="h-full bg-gradient-to-r from-rose-500 to-rose-400 rounded-full"
               />
@@ -1145,7 +1160,7 @@ export default function Sales() {
           <IMMetrics metrics={metricsData} />
         </div>
 
-        <SalesAIInsights showToast={showToast} />
+        <SalesAIInsights showToast={showToast} employee={selectedEmployee} />
       </div>
 
       {/* ── 3. Sales Pipeline Status ── */}
