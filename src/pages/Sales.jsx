@@ -446,7 +446,7 @@ function SalesPipelineStatus({ service, employee }) {
 
     apiGet(`/api/sales/emp-leads/pipeline-stats?${q.toString()}`)
       .then(d => {
-        if (d.success && d.grid && (d.source === "database" || d.source === "empty")) {
+        if (d.success && d.grid) {
           setStats(d.grid);
           setStageTotals(d.stageTotals || {});
           setTempTotals(d.tempTotals  || {});
