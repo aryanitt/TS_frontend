@@ -666,14 +666,15 @@ function CircleRing({ value, rgb, size = 88 }) {
   );
 }
 
-function IMMetrics() {
+function IMMetrics({ metrics }) {
   const isMobile = useIsMobile();
   const ringSize = isMobile ? 56 : 88;
+  const displayMetrics = metrics || IM_METRICS;
 
   return (
     <SectionCard title="IMP Metrics" subtitle={isMobile ? "Messaging funnel" : "Instant messaging funnel performance"} className="flex flex-col min-w-0 w-full">
       <div className="grid grid-cols-3 gap-1.5 sm:gap-4 w-full min-w-0">
-        {IM_METRICS.map((m, i) => (
+        {displayMetrics.map((m, i) => (
           <motion.div
             key={m.label}
             initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 + 0.1 }}
@@ -1073,6 +1074,7 @@ export default function Sales() {
 
   const [kpiData, setKpiData] = useState([]);
   const [oppData, setOppData] = useState({});
+  const [metricsData, setMetricsData] = useState(null);
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -1097,6 +1099,7 @@ export default function Sales() {
         if (d && d.success) {
           setKpiData(d.kpiData || []);
           setOppData(d.oppData || {});
+          setMetricsData(d.metrics || null);
         }
       }).catch(e => console.error(e));
   }, [selectedService, selectedEmployee]);
@@ -1139,7 +1142,7 @@ export default function Sales() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-6 items-start min-w-0">
         <div className="xl:col-span-2 flex flex-col gap-3 sm:gap-6 min-w-0">
           <RevenueOpportunitySection oppData={oppData} selectedService={selectedService} selectedEmployee={selectedEmployee} />
-          <IMMetrics />
+          <IMMetrics metrics={metricsData} />
         </div>
 
         <SalesAIInsights showToast={showToast} />
