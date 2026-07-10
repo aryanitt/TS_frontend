@@ -33,9 +33,10 @@ function isLocalDevHost() {
   return host === "localhost" || host === "127.0.0.1";
 }
 
-/** Deployed browser builds call Hostinger directly (avoids shared Vercel proxy IP 429s). */
 function shouldUseDirectBackendUrl() {
-  return typeof window !== "undefined";
+  if (typeof window === "undefined") return false;
+  if (isLocalDevHost()) return false;
+  return true;
 }
 
 function resolveDirectApiBase() {
