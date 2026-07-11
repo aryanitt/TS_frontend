@@ -321,14 +321,21 @@ export default function EmployeeTasks() {
     toast.success("Checklist updated");
   };
 
+  const [loaded, setLoaded] = useState(false);
+
   useEffect(() => {
-    if (loading || !employee?.id) return;
+    if (loading || !employee?.id || loaded) return;
     const hasTasks = Object.values(tasks || {}).some(
       (items) => Array.isArray(items) && items.length > 0,
     );
-    if (hasTasks) return;
-    refreshTasks(employee.id, employee);
-  }, [loading, employee?.id, tasks, refreshTasks]);
+    if (hasTasks) {
+      setLoaded(true);
+      return;
+    }
+    refreshTasks(employee.id, employee).finally(() => {
+      setLoaded(true);
+    });
+  }, [loading, employee?.id, tasks, refreshTasks, loaded]);
 
   const today = new Date(`${getEmpAppToday()}T00:00:00`);
 
