@@ -641,7 +641,7 @@ export default function Incentives() {
       setLoadingEmployees(true);
       try {
         // First try incentives dashboard (has performance data)
-        const incData = await apiGet("/api/incentives/dashboard", { skipCache: true, cacheTtl: 0 });
+        const incData = await apiGet(`/api/incentives/dashboard?month=${selectedMonth}`, { skipCache: true, cacheTtl: 0 });
         if (incData.teammates?.length) {
           const mapped = incData.teammates.map((t) => ({
             ...buildBlankTeammate(t),
@@ -659,7 +659,10 @@ export default function Incentives() {
             status: t.status || "PENDING",
           }));
           setTeammates(mapped);
-          setSelectedId(mapped[0].id);
+          setSelectedId((prev) => {
+            const exists = mapped.some((m) => m.id === prev);
+            return exists ? prev : mapped[0].id;
+          });
           setLoadingEmployees(false);
           return;
         }
@@ -673,7 +676,10 @@ export default function Incentives() {
         if (teamData?.success && Array.isArray(teamData.employees) && teamData.employees.length) {
           const mapped = teamData.employees.map(buildBlankTeammate);
           setTeammates(mapped);
-          setSelectedId(mapped[0].id);
+          setSelectedId((prev) => {
+            const exists = mapped.some((m) => m.id === prev);
+            return exists ? prev : mapped[0].id;
+          });
         } else {
           setTeammates([]);
           setSelectedId(null);
@@ -686,7 +692,7 @@ export default function Incentives() {
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedMonth]);
 
   // Fetch real Callyzer call stats and cash collections when employee or month changes
   useEffect(() => {
