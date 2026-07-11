@@ -657,6 +657,12 @@ export default function Incentives() {
             incBonus: t.incBonus ?? 0,
             penaltyDeduction: t.penaltyDeduction ?? 0,
             status: t.status || "PENDING",
+            responseTimeMin: t.responseTimeMin ?? 1.8,
+            pickupRate: t.pickupRate ?? 0,
+            qualificationRate: t.qualificationRate ?? 0,
+            objectionHandling: t.objectionHandling ?? 0,
+            conversionRate: t.conversionRate ?? 0,
+            followUpQuality: t.followUpQuality ?? 0,
           }));
           setTeammates(mapped);
           setSelectedId((prev) => {
