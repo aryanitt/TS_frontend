@@ -57,6 +57,32 @@ function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd, isNewAssig
   );
 }
 
+function isLeadInPeriod(lead, period, now = new Date()) {
+  const dateStr = lead.createdAt || lead.created_at;
+  if (!dateStr) return true;
+  const leadDate = new Date(dateStr);
+  if (Number.isNaN(leadDate.getTime())) return true;
+
+  const nowClone = new Date(now);
+  const startOfToday = new Date(nowClone.getFullYear(), nowClone.getMonth(), nowClone.getDate());
+
+  if (period === "today") {
+    return leadDate >= startOfToday;
+  }
+  if (period === "week") {
+    const day = nowClone.getDay();
+    const diff = nowClone.getDate() - day + (day === 0 ? -6 : 1);
+    const startOfWeek = new Date(nowClone.setDate(diff));
+    startOfWeek.setHours(0, 0, 0, 0);
+    return leadDate >= startOfWeek;
+  }
+  if (period === "month") {
+    const startOfMonth = new Date(nowClone.getFullYear(), nowClone.getMonth(), 1);
+    return leadDate >= startOfMonth;
+  }
+  return true;
+}
+
 export default function EmployeeLeads() {
   const { leads, addLead, updateLeadStage, employee } = useEmployee();
   const isMobile = useIsMobile();
@@ -68,25 +94,61 @@ export default function EmployeeLeads() {
   const [modalOpen, setModalOpen] = useState(searchParams.get("action") === "add");
   const [dragLeadId, setDragLeadId] = useState(null);
   const [dropStageId, setDropStageId] = useState(null);
-  const [totalCash, setTotalCash] = useState(0);
+  const [cashCollections, setCashCollections] = useState([]);
   const columnRefs = useRef({});
+  const period = searchParams.get("period") || "month";
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setModalOpen(true);
   }, [searchParams]);
 
-  // Fetch total cash collected this month for this employee
+  // Fetch cash collections list for this employee
   useEffect(() => {
     if (!employee?.id) return;
-    const month = new Date().toISOString().slice(0, 7);
     let cancelled = false;
     import("../../lib/api.js").then(({ apiGet }) => {
-      apiGet(`/api/incentives/employee/${employee.id}/cash-summary?month=${month}`, { skipCache: true, cacheTtl: 0 })
-        .then((res) => { if (!cancelled && res?.success) setTotalCash(Number(res.cashCollected) || 0); })
+      apiGet(`/api/v1/employees/${employee.id}/cash-collections`, { skipCache: true, cacheTtl: 0 })
+        .then((res) => {
+          if (!cancelled && res?.success) {
+            setCashCollections(Array.isArray(res.data) ? res.data : []);
+          }
+        })
         .catch(() => {});
     });
     return () => { cancelled = true; };
   }, [employee?.id]);
+
+  const totalCash = useMemo(() => {
+    const list = Array.isArray(cashCollections) ? cashCollections : [];
+    const filteredList = list.filter((cc) => {
+      const dateStr = cc.paymentAt || cc.createdAt;
+      if (!dateStr) return false;
+      const payDate = new Date(dateStr);
+      if (Number.isNaN(payDate.getTime())) return false;
+
+      const now = new Date();
+      const nowClone = new Date(now);
+      const startOfToday = new Date(nowClone.getFullYear(), nowClone.getMonth(), nowClone.getDate());
+
+      if (period === "today") {
+        return payDate >= startOfToday;
+      }
+      if (period === "week") {
+        const day = nowClone.getDay();
+        const diff = nowClone.getDate() - day + (day === 0 ? -6 : 1);
+        const startOfWeek = new Date(nowClone.setDate(diff));
+        startOfWeek.setHours(0, 0, 0, 0);
+        return payDate >= startOfWeek;
+      }
+      if (period === "month") {
+        const startOfMonth = new Date(nowClone.getFullYear(), nowClone.getMonth(), 1);
+        return payDate >= startOfMonth;
+      }
+      return true;
+    });
+
+    return filteredList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  }, [cashCollections, period]);
 
   function formatCashCard(val) {
     if (val >= 10000000) return `₹${(val / 10000000).toFixed(1)}Cr`;
@@ -96,9 +158,10 @@ export default function EmployeeLeads() {
   }
 
   const baseLeads = useMemo(() => {
-    if (!statusFilter || statusFilter === "all") return leads;
-    return leads.filter((l) => l.status === statusFilter);
-  }, [leads, statusFilter]);
+    const periodFilteredLeads = leads.filter((l) => isLeadInPeriod(l, period));
+    if (!statusFilter || statusFilter === "all") return periodFilteredLeads;
+    return periodFilteredLeads.filter((l) => l.status === statusFilter);
+  }, [leads, statusFilter, period]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

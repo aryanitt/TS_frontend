@@ -5,7 +5,7 @@ import {
   ArrowLeft, Phone, CalendarClock, Play, Pause, Sparkles,
   CheckCircle, Circle, Star, Smile, AlertCircle, RefreshCw,
   Clock, RotateCcw, Volume2, ShieldCheck, HelpCircle, ChevronRight,
-  User, CheckCircle2, History, ChevronDown,
+  User, CheckCircle2, History, ChevronDown, Pencil,
 } from "lucide-react";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
@@ -140,8 +140,12 @@ const formatTime24 = (hour, minute, ampm) => {
 export default function EmployeeCallDetail() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { calls = [], leads = [], addActivityRecord, scheduleFollowUp } = useEmployee();
+  const { calls = [], leads = [], addActivityRecord, scheduleFollowUp, editLeadDetails } = useEmployee();
   const callId = searchParams.get("id");
+
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editStatus, setEditStatus] = useState("");
 
   // Find active call log record
   const call = useMemo(() => {
@@ -158,8 +162,15 @@ export default function EmployeeCallDetail() {
   // Find all calls for this lead (Call History)
   const leadCalls = useMemo(() => {
     if (!call) return [];
-    return calls.filter((c) => String(c.leadId) === String(call.leadId));
-  }, [calls, call]);
+    if (call.leadId) {
+      return calls.filter((c) => String(c.leadId) === String(call.leadId));
+    }
+    const leadPhone = lead?.phone || call.phone;
+    if (leadPhone) {
+      return calls.filter((c) => c.phone && String(c.phone) === String(leadPhone));
+    }
+    return [call];
+  }, [calls, call, lead]);
 
   // Active SOP & compliance checklist calculations
   const activeSopId = useMemo(() => {
@@ -285,7 +296,33 @@ export default function EmployeeCallDetail() {
   };
 
   const handleCallAgain = () => {
-    navigate(`/employee/call-assistant?lead=${encodeURIComponent(call.name)}`);
+    navigate(`/employee/call-assistant?lead=${encodeURIComponent(lead?.name || call.name)}`);
+  };
+
+  useEffect(() => {
+    if (lead && isEditOpen) {
+      setEditName(lead.name || call.name);
+      setEditStatus(lead.status || "warm");
+    }
+  }, [lead, isEditOpen, call.name]);
+
+  const handleEditConfirm = async (e) => {
+    if (e) e.preventDefault();
+    if (!editName.trim()) {
+      toast.error("Lead name cannot be empty");
+      return;
+    }
+
+    try {
+      await editLeadDetails(lead.id, {
+        name: editName,
+        status: editStatus,
+      });
+      toast.success("Lead details updated successfully");
+      setIsEditOpen(false);
+    } catch (err) {
+      toast.error(err.message || "Failed to update lead details");
+    }
   };
 
   return (
@@ -312,7 +349,7 @@ export default function EmployeeCallDetail() {
                 className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border border-rose-100/60 bg-white hover:bg-rose-50/40 text-slate-650 hover:text-rose-700 text-[11px] sm:text-xs font-bold transition shadow-sm cursor-pointer max-w-[140px] sm:max-w-none truncate"
               >
                 <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-500 shrink-0" />
-                <span className="truncate">All Call Logs</span>
+                <span className="truncate">Call History</span>
                 <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
               </button>
               {allLogsOpen && (
@@ -320,9 +357,9 @@ export default function EmployeeCallDetail() {
                   <div className="fixed inset-0 z-20" onClick={() => setAllLogsOpen(false)} />
                   <div className="absolute left-0 mt-1.5 w-[min(85vw,288px)] rounded-xl bg-white border border-rose-100 shadow-elegant p-2 z-30 max-h-72 sm:max-h-80 overflow-y-auto scrollbar-thin space-y-1 animate-fade-in">
                     <p className="text-[10px] text-slate-400 font-bold uppercase px-2 py-1 tracking-wider border-b border-rose-50 mb-1">
-                      All Call Logs
+                      Call History
                     </p>
-                    {calls.map((c) => {
+                    {leadCalls.map((c) => {
                       const isActive = String(c.id) === String(call.id);
                       return (
                         <button
@@ -339,7 +376,7 @@ export default function EmployeeCallDetail() {
                           }`}
                         >
                           <div className="min-w-0">
-                            <p className="font-bold text-slate-900 truncate">{c.name}</p>
+                            <p className="font-bold text-slate-900 truncate">{lead?.name || c.name}</p>
                             <p className="text-[9.5px] text-slate-450 truncate mt-0.5">{c.date} · {c.outcome}</p>
                           </div>
                           <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -364,14 +401,14 @@ export default function EmployeeCallDetail() {
         
         <div className="flex items-start gap-4">
           <AvatarCircle
-            initials={lead?.av || call.name.slice(0, 2).toUpperCase()}
+            initials={lead?.av || (lead?.name || call.name).slice(0, 2).toUpperCase()}
             color={lead?.color || "#e11d48"}
             size={52}
           />
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-base sm:text-lg font-display font-bold text-slate-900 leading-none">
-                {call.name}
+                {lead?.name || call.name}
               </h2>
               {lead && <LeadStatusBadge status={lead.status} label={lead.status.toUpperCase()} />}
               <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10.5px] ${moodInfo.bg}`}>
@@ -380,7 +417,7 @@ export default function EmployeeCallDetail() {
             </div>
             
             <p className="text-xs text-slate-500 font-medium leading-none">
-              {call.company} · {call.phone || "+91 99999 99999"}
+              {lead?.company || call.company} · {lead?.phone || call.phone || "+91 99999 99999"}
             </p>
             
             <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-0.5 flex-wrap">
@@ -397,6 +434,11 @@ export default function EmployeeCallDetail() {
 
         {/* Action Widgets */}
         <div className="flex sm:items-center gap-2.5 flex-wrap md:flex-nowrap shrink-0">
+          {lead && (
+            <BtnSecondary className="!py-2 !rounded-xl !text-xs" onClick={() => setIsEditOpen(true)}>
+              <Pencil className="w-4 h-4" /> Edit Details
+            </BtnSecondary>
+          )}
           <BtnSecondary className="!py-2 !rounded-xl !text-xs" onClick={() => setIsFollowUpOpen(true)}>
             <CalendarClock className="w-4 h-4" /> Schedule Follow-up
           </BtnSecondary>
@@ -816,6 +858,53 @@ export default function EmployeeCallDetail() {
           </FormGroup>
         </form>
       </EmpModal>
+
+      {/* Edit Details Modal */}
+      {lead && (
+        <EmpModal
+          open={isEditOpen}
+          onClose={() => setIsEditOpen(false)}
+          title="Edit Lead Details"
+          subtitle="Update contact name and temperature status for this lead."
+          footer={
+            <div className="flex items-center gap-2">
+              <BtnGhost className="!py-1.5 !px-3" onClick={() => setIsEditOpen(false)}>
+                Cancel
+              </BtnGhost>
+              <BtnPrimary className="!py-1.5 !px-4" onClick={handleEditConfirm}>
+                Save Changes
+              </BtnPrimary>
+            </div>
+          }
+        >
+          <form onSubmit={handleEditConfirm} className="space-y-4">
+            <FormGroup>
+              <FormLabel>Lead Name</FormLabel>
+              <FormInput
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Enter contact name"
+                required
+              />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>Lead Status / Temperature</FormLabel>
+              <FormSelect
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+              >
+                <option value="hot">Hot Lead 🔥</option>
+                <option value="warm">Warm Lead 😴</option>
+                <option value="cold">Cold Lead ❄️</option>
+                <option value="converted">Converted 💸</option>
+                <option value="notpick">Not Picked ❌</option>
+                <option value="ni">Not Interested 👎</option>
+              </FormSelect>
+            </FormGroup>
+          </form>
+        </EmpModal>
+      )}
     </div>
   );
 }

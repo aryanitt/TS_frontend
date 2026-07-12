@@ -58,10 +58,13 @@ export default function EmployeeTopbar({ onMenu }) {
   const quickRef = useRef(null);
   const userRef = useRef(null);
   const isCallsPage = pathname === "/employee/calls";
-  const callPeriod = searchParams.get("period") || "today";
+  const isPipelinePage = pathname === "/employee/leads" || pathname === "/employee/pipeline";
+  const currentPeriod = searchParams.get("period") || (isCallsPage ? "today" : "month");
 
-  const setCallPeriod = (period) => {
-    setSearchParams({ period }, { replace: true });
+  const setPeriod = (period) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set("period", period);
+    setSearchParams(newParams, { replace: true });
   };
 
   const handleQuickAction = (action) => {
@@ -148,15 +151,15 @@ export default function EmployeeTopbar({ onMenu }) {
 
           <div className="hidden md:block flex-grow min-w-0" />
 
-          {isCallsPage && (
+          {(isCallsPage || isPipelinePage) && (
             <div className={`${SEGMENT_WRAP} hidden sm:inline-flex mr-1 shrink-0`}>
               {CALL_PERIODS.map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setCallPeriod(id)}
+                  onClick={() => setPeriod(id)}
                   className={`${SEGMENT_BTN} ${
-                    callPeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
+                    currentPeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
                   }`}
                 >
                   {label}
@@ -244,16 +247,16 @@ export default function EmployeeTopbar({ onMenu }) {
           </div>
         </div>
 
-        {isCallsPage && (
+        {(isCallsPage || isPipelinePage) && (
           <div className="sm:hidden px-2.5 pb-1 pt-0.5 border-t border-[#F3F4F6] bg-[#FAFAFA]/80">
             <div className={`${SEGMENT_WRAP} w-full`}>
               {CALL_PERIODS.map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setCallPeriod(id)}
+                  onClick={() => setPeriod(id)}
                   className={`flex-1 ${SEGMENT_BTN} ${
-                    callPeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
+                    currentPeriod === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
                   }`}
                 >
                   {label}

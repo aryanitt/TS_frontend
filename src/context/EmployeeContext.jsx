@@ -883,6 +883,25 @@ export function EmployeeProvider({ children }) {
     }
   }, [usingApi]);
 
+  const editLeadDetails = useCallback(async (leadId, updates) => {
+    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...updates } : l)));
+
+    if (shouldPersistToApi(usingApi)) {
+      try {
+        const payload = {};
+        if (updates.name !== undefined) payload.leadName = updates.name;
+        if (updates.status !== undefined) payload.temperature = temperatureToApi(updates.status);
+        if (updates.phone !== undefined) payload.phone = updates.phone;
+        if (updates.email !== undefined) payload.email = updates.email;
+
+        await apiPut(`/api/v1/leads/${leadId}`, payload, { headers: getCrmHeaders() });
+        invalidateCache("/api/v1");
+      } catch (err) {
+        toast.error(err.message || "Lead details update failed");
+      }
+    }
+  }, [usingApi]);
+
   const refreshTeamEmployees = useCallback(async () => {
     try {
       const empRes = await apiGet("/api/v1/employees", {
@@ -1250,6 +1269,7 @@ export function EmployeeProvider({ children }) {
     addLead,
     updateLeadStage,
     updateLeadTemperature,
+    editLeadDetails,
     refreshLeads,
     reassignLead,
     teamEmployees,
@@ -1275,7 +1295,7 @@ export function EmployeeProvider({ children }) {
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
-    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, refreshLeads,
+    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, refreshLeads,
     reassignLead, teamEmployees, refreshTeamEmployees,
     usingApi, calls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
