@@ -728,7 +728,7 @@ const DRAWER_STAGE_TO_EMP = {
   Attempted: "Conversation",
   "Not Pick": "Conversation",
   Negotiation: "Proposal Sent",
-  Converted: "Proposal Sent",
+  Converted: "Converted",
 };
 
 export function empLeadFromDrawerPayload(raw, avatarColors) {
@@ -1000,6 +1000,18 @@ export function formatFollowUpCompletedAt(iso) {
     minute: "2-digit",
     hour12: true,
   });
+}
+
+export function isFollowUpCompleted(followUp) {
+  if (!followUp) return false;
+  const status = String(followUp.status || "").toLowerCase();
+  return Boolean(
+    followUp.done
+    || followUp.completedAt
+    || followUp.completedWithMom
+    || status === "completed"
+    || status === "done",
+  );
 }
 
 export function formatFollowUpSchedule(dateStr, timeStr) {
@@ -1282,6 +1294,8 @@ export function followUpFromApi(apiFollowup, leads = [], type) {
   const leadName = lead?.name || lead?.leadName || apiFollowup.leadName || "Lead";
   const resolvedType = inferFollowUpType(apiFollowup.note, type);
   const status = String(apiFollowup.status || "pending").toLowerCase();
+  const isCompleted = status === "completed" || status === "done";
+  const completedAt = apiFollowup.completedAt || apiFollowup.completed_at || null;
 
   return {
     id: apiFollowup.id,
@@ -1295,10 +1309,11 @@ export function followUpFromApi(apiFollowup, leads = [], type) {
     note: apiFollowup.note || "",
     scheduledDate: dateStr,
     scheduledTime: timeStr,
-    done: status === "completed" || status === "done",
+    status,
+    done: isCompleted,
     completedWithMom: Boolean(apiFollowup.completedWithMom || apiFollowup.completed_with_mom),
-    completedAt: apiFollowup.completedAt || apiFollowup.completed_at || null,
-    completedTime: formatFollowUpCompletedAt(apiFollowup.completedAt || apiFollowup.completed_at),
+    completedAt,
+    completedTime: formatFollowUpCompletedAt(completedAt),
     taskId: apiFollowup.taskId,
     leadId: apiFollowup.leadId,
   };
@@ -1364,8 +1379,8 @@ export function getEmployeePerformanceSnapshot(employee, leads = []) {
     callsTarget: employee.callsTarget,
     revenueL: stats.revenueL ?? (liveRevenueL || 24),
     revenueTargetL: stats.revenueTargetL ?? 30,
-    qualifiedLeads: stats.qualifiedLeads ?? 14,
-    meetingsBooked: stats.meetingsBooked ?? 6,
+    qualifiedLeads: stats.qualifiedLeads ?? 0,
+    meetingsBooked: stats.meetingsBooked ?? 0,
     responseTimeMin: employee.responseTimeMin,
     pickupRate: employee.pickupRate,
     qualificationRate: employee.qualificationRate,

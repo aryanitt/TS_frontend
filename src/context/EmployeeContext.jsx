@@ -31,8 +31,14 @@ import {
   mergeCallsById,
   resolvePipelineStageLabel,
   pipelineStageCountsKey,
+  isFollowUpCompleted,
 } from "../data/employeeMock.js";
 import { apiGet, apiPost, apiPut, apiPatch, invalidateCache, shouldPersistToApi } from "../lib/api.js";
+import {
+  applyFollowUpOutcomes,
+  clearFollowUpOutcome,
+  persistFollowUpOutcome,
+} from "../lib/followUpOutcomes.js";
 import {
   getCrmHeaders,
   mapApiEmployee,
@@ -54,6 +60,7 @@ import {
   mergeFetchedList,
   replaceFetchedList,
   unwrapWorkspacePayload,
+  fetchAllEmployeeLeads,
 } from "../lib/leadSync.js";
 import { invalidateCallyzerStatsCache } from "../lib/useCallyzerStats.js";
 
@@ -62,7 +69,7 @@ const EmployeeContext = createContext(null);
 const EMPLOYEE_CACHE_TTL = 60_000;
 const CALLYZER_SYNC_INTERVAL_MS = 45_000;
 const EMPLOYEE_LIST_CACHE_TTL = 5 * 60 * 1000;
-const WORKSPACE_SNAPSHOT_PREFIX = "emp_workspace_v1:";
+const WORKSPACE_SNAPSHOT_PREFIX = "emp_workspace_v2:";
 const WORKSPACE_SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const AVATAR_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b"];
 
@@ -101,7 +108,7 @@ function persistWorkspaceSnapshot(employeeId, { calls: callList, leads: leadList
       `${WORKSPACE_SNAPSHOT_PREFIX}${employeeId}`,
       JSON.stringify({
         calls: Array.isArray(callList) ? callList.slice(0, 200) : [],
-        leads: Array.isArray(leadList) ? leadList.slice(0, 500) : [],
+        leads: Array.isArray(leadList) ? leadList.slice(0, 5000) : [],
         ts: Date.now(),
       }),
     );
@@ -143,6 +150,11 @@ function countTasks(map) {
 
 function listUpdaterForSession() {
   return getAuthenticatedEmployeeId() ? replaceFetchedList : mergeFetchedList;
+}
+
+function mapFollowUpsFromApi(items, leadList = []) {
+  const mapped = items.map((f) => followUpFromApi(f, leadList));
+  return applyFollowUpOutcomes(mapped, { isCompleted: isFollowUpCompleted });
 }
 
 function applyLeadsIfChanged(prev, incoming) {
@@ -297,7 +309,7 @@ export function EmployeeProvider({ children }) {
 
       if (Array.isArray(data.followups)) {
         setFollowUpsState(() => {
-          const next = data.followups.map((f) => followUpFromApi(f, workspaceLeads || []));
+          const next = mapFollowUpsFromApi(data.followups, workspaceLeads || []);
           return applyList([], next);
         });
       }
@@ -359,15 +371,10 @@ export function EmployeeProvider({ children }) {
       if (!authEmployeeId && isMockEmployeeId(empId, MOCK_EMPLOYEE_ID)) {
         resolvedId = await resolveApiEmployeeId(empId, empProfile);
       }
-      const leadsPath = employeeResourcePath(resolvedId, "leads");
-      if (!leadsPath) return false;
-      const res = await apiGet(leadsPath, {
+      if (!resolvedId || isMockEmployeeId(resolvedId, MOCK_EMPLOYEE_ID)) return false;
+      const items = await fetchAllEmployeeLeads(apiGet, resolvedId, {
         headers: getCrmHeaders("employee", empProfile),
-        cacheTtl: 0,
-        skipCache: true,
       });
-      const items = unwrapApiList(res);
-      if (!items) return false;
       const mapped = filterLeadsForEmployee(
         items.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
         authEmployeeId || resolvedId,
@@ -421,7 +428,7 @@ export function EmployeeProvider({ children }) {
       if (!items) return false;
       setFollowUpsState((prev) => listUpdaterForSession()(
         prev,
-        items.map((f) => followUpFromApi(f, leadList)),
+        mapFollowUpsFromApi(items, leadList),
       ));
       setUsingApi(true);
       return true;
@@ -475,14 +482,15 @@ export function EmployeeProvider({ children }) {
 
       const headers = getCrmHeaders("employee", employee);
       const fetchOpts = { headers, cacheTtl: 0, skipCache: true };
-      const [leadsRes, callsRes] = await Promise.all([
-        leadsPath ? apiGet(leadsPath, fetchOpts) : Promise.resolve(null),
+      const [leadItems, callsRes] = await Promise.all([
+        resolvedId && !isMockEmployeeId(resolvedId, MOCK_EMPLOYEE_ID)
+          ? fetchAllEmployeeLeads(apiGet, resolvedId, { headers })
+          : Promise.resolve(null),
         apiGet(callsPath, fetchOpts),
       ]);
 
       let mappedLeads = leadsRef.current;
-      const leadItems = leadsRes ? unwrapApiList(leadsRes) : null;
-      if (leadItems) {
+      if (Array.isArray(leadItems)) {
         mappedLeads = filterLeadsForEmployee(
           leadItems.map((l) => apiLeadToEmployee(l, AVATAR_COLORS)),
           resolvedId,
@@ -802,22 +810,32 @@ export function EmployeeProvider({ children }) {
   }, [employee, leads, setFollowUps, setTasks, usingApi, resolveApiEmployeeId, refreshFollowUps]);
 
   const completeFollowUp = useCallback(async (followUpId) => {
-    setFollowUps((prev) => prev.map((f) => (f.id === followUpId ? { ...f, done: true } : f)));
+    if (!followUpId) return;
+
+    const completedAt = new Date().toISOString();
+    const completedTime = formatFollowUpCompletedAt(completedAt);
+
+    setFollowUps((prev) => prev.map((f) => (
+      String(f.id) === String(followUpId)
+        ? { ...f, done: true, status: "completed", completedAt, completedTime }
+        : f
+    )));
+    clearFollowUpOutcome(followUpId);
     setTasks((prev) => {
       const next = { ...prev };
       Object.keys(next).forEach((date) => {
         next[date] = (next[date] || []).map((t) => (
-          t.followUpId === followUpId ? { ...t, done: true } : t
+          String(t.followUpId) === String(followUpId) ? { ...t, done: true } : t
         ));
       });
       return next;
     });
 
-    if (!shouldPersistToApi(usingApi) || !followUpId) return;
+    if (!shouldPersistToApi(usingApi)) return;
 
     try {
       await apiPatch(`/api/v1/employee/followups/${followUpId}/complete`, {}, { headers: getCrmHeaders() });
-      invalidateCache("/api/v1");
+      invalidateCache("/api/v1/employee/");
     } catch (err) {
       toast.error(err.message || "Could not mark follow-up complete on server");
     }
@@ -844,10 +862,11 @@ export function EmployeeProvider({ children }) {
         return {
           ...f,
           done: true,
+          status: "completed",
           completedWithMom: true,
           completedAt,
           completedTime,
-          momSnippet: typeof mom === "string" ? mom.slice(0, 160) : f.momSnippet,
+          momSnippet: typeof mom === "string" && mom.trim() ? mom.slice(0, 160) : f.momSnippet,
         };
       });
       return found ? next : prev;
@@ -1029,6 +1048,73 @@ export function EmployeeProvider({ children }) {
       }
     }
   }, [usingApi]);
+
+  const markFollowUpNotPicked = useCallback(async (followUpId, { leadId, leadName } = {}) => {
+    let matchedId = followUpId;
+
+    setFollowUps((prev) => {
+      let found = false;
+      const next = prev.map((f) => {
+        if (isFollowUpCompleted(f)) return f;
+        const idMatch = followUpId && String(f.id) === String(followUpId);
+        const leadIdMatch = leadId && String(f.leadId) === String(leadId);
+        const nameMatch = leadName && String(f.name || "").trim().toLowerCase() === String(leadName).trim().toLowerCase();
+        if (!idMatch && !leadIdMatch && !nameMatch) return f;
+        found = true;
+        matchedId = f.id;
+        const noteBase = (f.note || "Call follow-up scheduled").replace(/ · Not picked/gi, "").replace(/ · Call again/gi, "");
+        return {
+          ...f,
+          done: false,
+          status: "pending",
+          notPicked: true,
+          lastCallOutcome: "not_picked",
+          note: `${noteBase} · Not picked`,
+        };
+      });
+      return found ? next : prev;
+    });
+
+    if (matchedId) persistFollowUpOutcome(matchedId, "not_picked");
+    if (leadId) {
+      try {
+        await updateLeadTemperature(leadId, "notpick");
+      } catch {
+        /* local follow-up state still updated */
+      }
+    }
+    return matchedId;
+  }, [setFollowUps, updateLeadTemperature]);
+
+  const markFollowUpCallAgain = useCallback(async (followUpId, { leadId, leadName } = {}) => {
+    let matchedId = followUpId;
+
+    setFollowUps((prev) => {
+      let found = false;
+      const next = prev.map((f) => {
+        if (isFollowUpCompleted(f)) return f;
+        const idMatch = followUpId && String(f.id) === String(followUpId);
+        const leadIdMatch = leadId && String(f.leadId) === String(leadId);
+        const nameMatch = leadName && String(f.name || "").trim().toLowerCase() === String(leadName).trim().toLowerCase();
+        if (!idMatch && !leadIdMatch && !nameMatch) return f;
+        found = true;
+        matchedId = f.id;
+        const noteBase = (f.note || "Call follow-up scheduled").replace(/ · Not picked/gi, "").replace(/ · Call again/gi, "");
+        return {
+          ...f,
+          done: false,
+          status: "pending",
+          notPicked: false,
+          lastCallOutcome: "call_again",
+          note: `${noteBase} · Call again`,
+        };
+      });
+      return found ? next : prev;
+    });
+
+    if (matchedId) persistFollowUpOutcome(matchedId, "call_again");
+    return matchedId;
+  }, [setFollowUps]);
 
   const editLeadDetails = useCallback(async (leadId, updates) => {
     const normalizedUpdates = { ...updates };
@@ -1516,6 +1602,8 @@ export function EmployeeProvider({ children }) {
     scheduleFollowUp,
     completeFollowUp,
     completeFollowUpWithMom,
+    markFollowUpNotPicked,
+    markFollowUpCallAgain,
     refreshFollowUps,
     syncTaskWithFollowUp,
     leads,
@@ -1550,7 +1638,7 @@ export function EmployeeProvider({ children }) {
     reloadWorkspace,
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
-    followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, refreshFollowUps,
+    followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, markFollowUpNotPicked, markFollowUpCallAgain, refreshFollowUps,
     syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, refreshLeads, refreshCalls, syncCallyzerData,
     reassignLead, teamEmployees, refreshTeamEmployees,
     usingApi, calls, setCalls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
