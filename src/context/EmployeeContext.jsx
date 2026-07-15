@@ -25,6 +25,8 @@ import {
   extractApiSopList,
   readCachedEmployeeSops,
   persistEmployeeSops,
+  getEmpStageMeta,
+  mapEmpLeadKanbanStage,
 } from "../data/employeeMock.js";
 import { apiGet, apiPost, apiPut, apiPatch, invalidateCache, shouldPersistToApi } from "../lib/api.js";
 import {
@@ -844,7 +846,6 @@ export function EmployeeProvider({ children }) {
       return {
         ...l,
         stage: stageLabel,
-        status: patch.employeeStatus,
         pipelineStage: stageLabel,
         assignmentStatus: fromNewAssigned ? "accepted" : l.assignmentStatus,
         acceptedAt,
@@ -884,7 +885,23 @@ export function EmployeeProvider({ children }) {
   }, [usingApi]);
 
   const editLeadDetails = useCallback(async (leadId, updates) => {
-    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...updates, stage: updates.pipelineStage || l.stage, pipelineStage: updates.pipelineStage || l.pipelineStage } : l)));
+    const normalizedUpdates = { ...updates };
+    if (updates.pipelineStage !== undefined) {
+      const stageId = mapEmpLeadKanbanStage(updates.pipelineStage, "");
+      normalizedUpdates.pipelineStage = getEmpStageMeta(stageId).label;
+      normalizedUpdates.stage = normalizedUpdates.pipelineStage;
+    }
+
+    setLeads((prev) => prev.map((l) => (
+      l.id === leadId
+        ? {
+          ...l,
+          ...normalizedUpdates,
+          stage: normalizedUpdates.stage || normalizedUpdates.pipelineStage || l.stage,
+          pipelineStage: normalizedUpdates.pipelineStage || l.pipelineStage,
+        }
+        : l
+    )));
 
     if (shouldPersistToApi(usingApi)) {
       try {
@@ -893,7 +910,7 @@ export function EmployeeProvider({ children }) {
         if (updates.status !== undefined) payload.temperature = temperatureToApi(updates.status);
         if (updates.phone !== undefined) payload.phone = updates.phone;
         if (updates.email !== undefined) payload.email = updates.email;
-        if (updates.pipelineStage !== undefined) payload.pipelineStage = updates.pipelineStage;
+        if (normalizedUpdates.pipelineStage !== undefined) payload.pipelineStage = normalizedUpdates.pipelineStage;
 
         await apiPut(`/api/v1/leads/${leadId}`, payload, { headers: getCrmHeaders() });
         invalidateCache("/api/v1");

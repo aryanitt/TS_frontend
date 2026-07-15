@@ -184,9 +184,7 @@ export function filterCallsForPeriod(calls, period) {
 export function computeCallStatsFromCalls(calls, period = "today") {
   const list = filterCallsForPeriod(calls, period);
   const dials = list.length;
-  const missed = list.filter(
-    (c) => c.type === "miss" || /not pick|missed/i.test(String(c.outcome || "")),
-  ).length;
+  const missed = list.filter((c) => isMissedCall(c)).length;
   const connected = dials - missed;
   const pickupRate = dials ? Math.round((connected / dials) * 100) : 0;
   const missRate = dials ? Math.round((missed / dials) * 100) : 0;
@@ -1037,6 +1035,24 @@ export function parseDurationToSeconds(value) {
   return 0;
 }
 
+export function isMissedCall(call = {}) {
+  if (call.type === "miss") return true;
+  const outcome = String(call.outcome || "").toLowerCase();
+  if (/not connected|not pick|missed|rejected|no answer|busy|unanswered|not answered/.test(outcome)) {
+    return true;
+  }
+  const durationSec = Number.isFinite(call.durationSec)
+    ? call.durationSec
+    : parseDurationToSeconds(call.duration);
+  return durationSec <= 2 && !/connected/i.test(outcome);
+}
+
+export function resolveEmployeeCallType(call = {}) {
+  if (isMissedCall(call)) return "miss";
+  if (call.type === "in" || call.direction === "inbound") return "in";
+  return "out";
+}
+
 export function formatDurationFromSeconds(totalSecs) {
   if (!totalSecs) return "—";
   const m = Math.floor(totalSecs / 60);
@@ -1099,6 +1115,13 @@ export function callFromApi(apiCall, leads = []) {
     : `${createdDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} ${createdDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
 
   const dir = apiCall.direction === "inbound" ? "in" : "out";
+  const type = isMissedCall({
+    type: dir,
+    outcome: apiCall.outcome,
+    durationSec: apiCall.durationSec,
+  })
+    ? "miss"
+    : dir;
 
   return {
     id: apiCall.id,
@@ -1106,7 +1129,7 @@ export function callFromApi(apiCall, leads = []) {
     name: lead?.name || lead?.leadName || apiCall.clientName || "Unknown Lead",
     company: lead?.company || lead?.companyName || "—",
     duration: formatDurationFromSeconds(apiCall.durationSec),
-    type: dir,
+    type,
     date: dateLabel,
     callAt: created || createdDate.toISOString(),
     callDay,

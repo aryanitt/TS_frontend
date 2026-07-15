@@ -5,8 +5,10 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, StatCard, Badge } from "../../components/Primitives.jsx";
+import { CustomSelect } from "../../components/CustomSelect.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import { EMP_APP_TODAY } from "../../data/employeeMock.js";
+import { formatIndianPhone } from "../../lib/indianFormat.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
   EmpEmptyState, EmpModal, BtnPrimary, BtnSecondary, BtnGhost,
@@ -187,7 +189,7 @@ const formatTime24 = (hour, minute, ampm) => {
 };
 
 const EMPTY_SCHEDULE = {
-  leadName: "",
+  leadId: "",
   date: EMP_APP_TODAY,
   time: "14:00",
   type: "Call",
@@ -268,6 +270,21 @@ export default function EmployeeFollowUps() {
     return list;
   }, [filter, search, completedFollowUps]);
 
+  const leadOptions = useMemo(() => {
+    return [...leads]
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base" }))
+      .map((l) => {
+        const phone = formatIndianPhone(l.phone);
+        const company = l.company && l.company !== "—" ? l.company : "";
+        return {
+          value: String(l.id),
+          label: l.name || "Unnamed lead",
+          subtitle: phone !== "—" ? phone : (company || ""),
+          searchText: `${l.name || ""} ${l.phone || ""} ${l.company || ""}`,
+        };
+      });
+  }, [leads]);
+
   const grouped = useMemo(() => {
     if (filter !== "all") return null;
     return ["overdue", "today", "upcoming"]
@@ -297,7 +314,7 @@ export default function EmployeeFollowUps() {
   };
 
   const handleSchedule = () => {
-    if (!form.leadName) {
+    if (!form.leadId) {
       toast.error("Select a lead");
       return;
     }
@@ -305,15 +322,19 @@ export default function EmployeeFollowUps() {
       toast.error("Pick date and time");
       return;
     }
-    const lead = leads.find((l) => l.name === form.leadName);
+    const lead = leads.find((l) => String(l.id) === String(form.leadId));
+    if (!lead) {
+      toast.error("Selected lead not found");
+      return;
+    }
     scheduleFollowUp({
-      leadName: form.leadName,
-      company: lead?.company,
+      leadName: lead.name,
+      company: lead.company,
       type: form.type,
       date: form.date,
       time: form.time,
       note: form.note,
-      leadId: lead?.id,
+      leadId: lead.id,
     });
     closeModal();
     setForm(EMPTY_SCHEDULE);
@@ -560,15 +581,15 @@ export default function EmployeeFollowUps() {
       >
         <FormGroup>
           <FormLabel>Lead</FormLabel>
-          <FormSelect
-            value={form.leadName}
-            onChange={(e) => setForm((p) => ({ ...p, leadName: e.target.value }))}
-          >
-            <option value="">Select lead…</option>
-            {leads.map((l) => (
-              <option key={l.id} value={l.name}>{l.name} — {l.company}</option>
-            ))}
-          </FormSelect>
+          <CustomSelect
+            value={form.leadId}
+            onChange={(val) => setForm((p) => ({ ...p, leadId: val }))}
+            options={leadOptions}
+            searchable
+            searchPlaceholder="Search by name or phone number…"
+            placeholder="Select lead…"
+            compact
+          />
         </FormGroup>
         <FormRow>
           <FormGroup>

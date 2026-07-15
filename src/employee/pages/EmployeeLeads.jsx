@@ -46,7 +46,7 @@ function LeadCard({ lead, onOpen, isDragging, onDragStart, onDragEnd, isNewAssig
             <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{lead.name}</p>
             <p className="text-[10px] text-slate-500 truncate mt-0.5">{lead.company}</p>
           </div>
-          <LeadStatusBadge status={lead.status} label={LEAD_STATUS_LABELS[lead.status]} />
+          <LeadStatusBadge status={lead.status} label={LEAD_STATUS_LABELS[lead.status] || lead.stage || "Lead"} />
         </div>
         <div className="flex items-center justify-between pt-2 border-t border-rose-50">
           <span className="text-xs font-black text-rose-700 tabular-nums">{lead.budget}</span>

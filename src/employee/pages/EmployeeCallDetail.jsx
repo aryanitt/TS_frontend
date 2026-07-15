@@ -13,7 +13,31 @@ import {
   AvatarCircle, LeadStatusBadge, BtnPrimary, BtnSecondary, BtnGhost, EmpModal,
   FormInput, FormLabel, FormGroup, FormSelect, FormTextarea, FormRow
 } from "../components/EmpUI.jsx";
-import { LOCAL_SOPS } from "../../data/employeeMock.js";
+import { LOCAL_SOPS, LEAD_STATUS_LABELS, getEmpStageMeta, mapEmpLeadKanbanStage } from "../../data/employeeMock.js";
+
+const EMP_STAGE_OPTIONS = [
+  { id: "conversation", label: "Conversation" },
+  { id: "booked", label: "Booked" },
+  { id: "showed_up", label: "Showed up" },
+  { id: "proposal_sent", label: "Proposal Sent" },
+];
+
+function stageToSelectValue(stage) {
+  const stageId = mapEmpLeadKanbanStage(stage, "");
+  return stageId || "conversation";
+}
+
+function stageSelectToLabel(stageValue) {
+  const id = EMP_STAGE_OPTIONS.some((option) => option.id === stageValue)
+    ? stageValue
+    : stageToSelectValue(stageValue);
+  return getEmpStageMeta(id).label;
+}
+
+function leadStatusLabel(lead) {
+  if (!lead) return "Lead";
+  return LEAD_STATUS_LABELS[lead.status] || lead.stage || String(lead.status || "Lead");
+}
 
 // Helper to parse duration string (MM:SS or similar) into seconds
 const parseDurationToSeconds = (durationStr) => {
@@ -239,6 +263,50 @@ export default function EmployeeCallDetail() {
   const [followUpType, setFollowUpType] = useState("Call");
   const [followUpNotes, setFollowUpNotes] = useState("");
 
+  const [notesList, setNotesList] = useState([]);
+  const [newNote, setNewNote] = useState("");
+  const [noteLoading, setNoteLoading] = useState(false);
+  const [noteSaving, setNoteSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isEditOpen || !call) return;
+    setEditName(lead?.name || call.name || "");
+    setEditStatus(lead?.status || "warm");
+    setEditStage(stageToSelectValue(lead?.pipelineStage || lead?.stage));
+  }, [lead, isEditOpen, call]);
+
+  useEffect(() => {
+    if (!lead?.id) {
+      setNotesList([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setNoteLoading(true);
+        const { apiGet } = await import("../../lib/api.js");
+        const { getCrmHeaders } = await import("../../lib/crmContext.js");
+        const res = await apiGet(`/api/v1/leads/${lead.id}/notes`, {
+          headers: getCrmHeaders(),
+        });
+        if (cancelled) return;
+        if (res?.success !== false) {
+          setNotesList(Array.isArray(res.data) ? res.data : Array.isArray(res) ? res : []);
+        }
+      } catch (err) {
+        if (!cancelled) console.error("Failed to fetch lead notes", err);
+      } finally {
+        if (!cancelled) setNoteLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lead?.id]);
+
   if (!call) {
     return (
       <div className="page-shell space-y-4">
@@ -300,14 +368,6 @@ export default function EmployeeCallDetail() {
     navigate(`/employee/call-assistant?lead=${encodeURIComponent(lead?.name || call.name)}`);
   };
 
-  useEffect(() => {
-    if (isEditOpen) {
-      setEditName(lead?.name || call?.name || "");
-      setEditStatus(lead?.status || "warm");
-      setEditStage(lead?.pipelineStage || lead?.stage || "conversation");
-    }
-  }, [lead, isEditOpen, call?.name]);
-
   const handleEditConfirm = async (e) => {
     if (e) e.preventDefault();
     if (!editName.trim()) {
@@ -320,7 +380,7 @@ export default function EmployeeCallDetail() {
         await editLeadDetails(lead.id, {
           name: editName,
           status: editStatus,
-          pipelineStage: editStage,
+          pipelineStage: stageSelectToLabel(editStage),
         });
         toast.success("Lead details updated successfully");
         setIsEditOpen(false);
@@ -337,7 +397,7 @@ export default function EmployeeCallDetail() {
           leadName: editName.trim(),
           phone: call.phone || "",
           temperature: editStatus,
-          pipelineStage: editStage,
+          pipelineStage: stageSelectToLabel(editStage),
           companyName: call.company || ""
         }, { headers: getCrmHeaders() });
         
@@ -401,7 +461,7 @@ export default function EmployeeCallDetail() {
   const handleStageChange = async (newStage) => {
     if (lead) {
       try {
-        await editLeadDetails(lead.id, { pipelineStage: newStage });
+        await editLeadDetails(lead.id, { pipelineStage: stageSelectToLabel(newStage) });
         toast.success("Lead stage updated successfully");
       } catch (err) {
         toast.error(err.message || "Failed to update stage");
@@ -415,7 +475,7 @@ export default function EmployeeCallDetail() {
           leadName: call.name || "Unknown Lead",
           phone: call.phone || "",
           temperature: "warm",
-          pipelineStage: newStage,
+          pipelineStage: stageSelectToLabel(newStage),
           companyName: call.company || ""
         }, { headers: getCrmHeaders() });
         
@@ -436,11 +496,6 @@ export default function EmployeeCallDetail() {
     }
   };
 
-  const [notesList, setNotesList] = useState([]);
-  const [newNote, setNewNote] = useState("");
-  const [noteLoading, setNoteLoading] = useState(false);
-  const [noteSaving, setNoteSaving] = useState(false);
-
   const fetchNotes = async () => {
     if (!lead?.id) return;
     try {
@@ -459,12 +514,6 @@ export default function EmployeeCallDetail() {
       setNoteLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (lead?.id) {
-      fetchNotes();
-    }
-  }, [lead?.id]);
 
   const handleAddNote = async (e) => {
     if (e) e.preventDefault();
@@ -576,7 +625,7 @@ export default function EmployeeCallDetail() {
               <h2 className="text-base sm:text-lg font-display font-bold text-slate-900 leading-none">
                 {lead?.name || call.name}
               </h2>
-              {lead && <LeadStatusBadge status={lead.status} label={lead.status.toUpperCase()} />}
+              {lead && <LeadStatusBadge status={lead.status} label={leadStatusLabel(lead)} />}
               <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10.5px] ${moodInfo.bg}`}>
                 {moodInfo.label}
               </span>
@@ -1118,7 +1167,7 @@ export default function EmployeeCallDetail() {
             >
               <option value="conversation">Conversation</option>
               <option value="booked">Booked</option>
-              <option value="showed_up">Showed Up</option>
+              <option value="showed_up">Showed up</option>
               <option value="proposal_sent">Proposal Sent</option>
             </FormSelect>
           </FormGroup>
