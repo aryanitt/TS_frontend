@@ -125,8 +125,9 @@ export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
   const name = lead.leadName || lead.lead_name || "Lead";
   const id = lead.id;
   const av = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const pipelineStage = lead.pipelineStage || lead.pipeline_stage || lead.stage || "Conversation";
   const status = normalizeEmployeeLeadStatus(lead);
-  const stage = lead.pipelineStage || lead.pipeline_stage || lead.status || "Conversation";
+  const stage = pipelineStage;
   const revenue = Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0);
 
   return {

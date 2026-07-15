@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "./AuthContext.jsx";
 import {
@@ -29,6 +29,8 @@ import {
   mapEmpLeadKanbanStage,
   formatEmpPipelineValue,
   mergeCallsById,
+  resolvePipelineStageLabel,
+  pipelineStageCountsKey,
 } from "../data/employeeMock.js";
 import { apiGet, apiPost, apiPut, apiPatch, invalidateCache, shouldPersistToApi } from "../lib/api.js";
 import {
@@ -143,6 +145,19 @@ function listUpdaterForSession() {
   return getAuthenticatedEmployeeId() ? replaceFetchedList : mergeFetchedList;
 }
 
+function applyLeadsIfChanged(prev, incoming) {
+  const next = listUpdaterForSession()(prev, incoming);
+  if (
+    prev === next
+    || (Array.isArray(prev) && Array.isArray(next)
+      && prev.length === next.length
+      && pipelineStageCountsKey(prev) === pipelineStageCountsKey(next))
+  ) {
+    return prev;
+  }
+  return next;
+}
+
 function filterLeadsForEmployee(leadList, employeeId, { trustServer = false } = {}) {
   if (!Array.isArray(leadList)) return [];
   if (trustServer || !employeeId) return leadList;
@@ -181,6 +196,9 @@ export function EmployeeProvider({ children }) {
   const [linkError, setLinkError] = useState(null);
   const [workspaceError, setWorkspaceError] = useState(null);
   const [leads, setLeads] = useState(() => initialSnapshot?.leads ?? []);
+  const leadsRef = useRef(leads);
+  const syncCallyzerInFlightRef = useRef(false);
+  const syncCallyzerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [usingApi, setUsingApi] = useState(() => typeof window !== "undefined");
 
@@ -192,6 +210,10 @@ export function EmployeeProvider({ children }) {
   const [activities, setActivities] = useState({});
   const [sops, setSopsState] = useState([]);
   const [teamEmployees, setTeamEmployees] = useState([]);
+
+  useEffect(() => {
+    leadsRef.current = leads;
+  }, [leads]);
 
   const resolveApiEmployeeId = useCallback(async (preferredId, preferredProfile) => {
     const authEmployeeId = getAuthenticatedEmployeeId();
@@ -270,7 +292,7 @@ export function EmployeeProvider({ children }) {
       const applyList = listUpdaterForSession();
 
       if (workspaceLeads) {
-        setLeads(() => applyList([], workspaceLeads));
+        setLeads((prev) => applyLeadsIfChanged(prev, workspaceLeads));
       }
 
       if (Array.isArray(data.followups)) {
@@ -341,7 +363,8 @@ export function EmployeeProvider({ children }) {
       if (!leadsPath) return false;
       const res = await apiGet(leadsPath, {
         headers: getCrmHeaders("employee", empProfile),
-        cacheTtl: EMPLOYEE_CACHE_TTL,
+        cacheTtl: 0,
+        skipCache: true,
       });
       const items = unwrapApiList(res);
       if (!items) return false;
@@ -350,7 +373,7 @@ export function EmployeeProvider({ children }) {
         authEmployeeId || resolvedId,
         { trustServer: Boolean(authEmployeeId) },
       );
-      setLeads(() => listUpdaterForSession()([], mapped));
+      setLeads((prev) => applyLeadsIfChanged(prev, mapped));
       setUsingApi(true);
       setWorkspaceError(null);
       return true;
@@ -433,8 +456,9 @@ export function EmployeeProvider({ children }) {
   }, [employee, leads, resolveApiEmployeeId]);
 
   const syncCallyzerData = useCallback(async () => {
-    if (!shouldPersistToApi(usingApi) || !employee?.id) return;
+    if (!shouldPersistToApi(usingApi) || !employee?.id || syncCallyzerInFlightRef.current) return;
 
+    syncCallyzerInFlightRef.current = true;
     try {
       const authEmployeeId = getAuthenticatedEmployeeId();
       let resolvedId = authEmployeeId || employee.id;
@@ -456,7 +480,7 @@ export function EmployeeProvider({ children }) {
         apiGet(callsPath, fetchOpts),
       ]);
 
-      let mappedLeads = leads;
+      let mappedLeads = leadsRef.current;
       const leadItems = leadsRes ? unwrapApiList(leadsRes) : null;
       if (leadItems) {
         mappedLeads = filterLeadsForEmployee(
@@ -464,7 +488,8 @@ export function EmployeeProvider({ children }) {
           resolvedId,
           { trustServer: Boolean(authEmployeeId) },
         );
-        setLeads(() => listUpdaterForSession()([], mappedLeads));
+        setLeads((prev) => applyLeadsIfChanged(prev, mappedLeads));
+        leadsRef.current = applyLeadsIfChanged(leadsRef.current, mappedLeads);
       }
 
       const callItems = unwrapApiList(callsRes);
@@ -475,8 +500,10 @@ export function EmployeeProvider({ children }) {
       }
     } catch {
       /* silent background sync */
+    } finally {
+      syncCallyzerInFlightRef.current = false;
     }
-  }, [employee, leads, resolveApiEmployeeId, usingApi]);
+  }, [employee, resolveApiEmployeeId, usingApi]);
 
   const resolveAssigneeId = useCallback(async () => {
     const authEmployeeId = getAuthenticatedEmployeeId();
@@ -959,11 +986,12 @@ export function EmployeeProvider({ children }) {
     const prevSnapshot = current ? { ...current } : null;
 
     setLeads((prev) => prev.map((l) => {
-      if (l.id !== leadId) return l;
+      if (String(l.id) !== String(leadId)) return l;
       return {
         ...l,
         stage: stageLabel,
         pipelineStage: stageLabel,
+        status: patch.employeeStatus || l.status,
         assignmentStatus: fromNewAssigned ? "accepted" : l.assignmentStatus,
         acceptedAt,
       };
@@ -975,10 +1003,11 @@ export function EmployeeProvider({ children }) {
           stage: stageLabel,
           status: patch.employeeStatus || stageLabel,
         }, { headers: getCrmHeaders() });
-        invalidateCache("/api/v1");
+        invalidateCache("/api/v1/employee/");
+        invalidateCache(`/api/v1/leads/${leadId}`);
       } catch (err) {
         if (prevSnapshot) {
-          setLeads((prev) => prev.map((l) => (l.id === leadId ? prevSnapshot : l)));
+          setLeads((prev) => prev.map((l) => (String(l.id) === String(leadId) ? prevSnapshot : l)));
         }
         toast.error(err.message || "Stage update failed");
         throw err;
@@ -1004,7 +1033,7 @@ export function EmployeeProvider({ children }) {
   const editLeadDetails = useCallback(async (leadId, updates) => {
     const normalizedUpdates = { ...updates };
     const stageUpdate = updates.pipelineStage !== undefined
-      ? getEmpStageMeta(mapEmpLeadKanbanStage(updates.pipelineStage, updates.status || "")).label
+      ? resolvePipelineStageLabel(updates.pipelineStage, updates.status || "")
       : undefined;
     if (stageUpdate) {
       normalizedUpdates.pipelineStage = stageUpdate;
@@ -1086,6 +1115,7 @@ export function EmployeeProvider({ children }) {
             };
           }));
         }
+        invalidateCache("/api/v1/employee/");
         invalidateCache(`/api/v1/leads/${leadId}`);
       } catch (err) {
         if (prevSnapshot) {
@@ -1451,17 +1481,19 @@ export function EmployeeProvider({ children }) {
     }
   }, [employee, resolveApiEmployeeId, syncCallyzerData]);
 
+  syncCallyzerRef.current = syncCallyzerData;
+
   useEffect(() => {
     if (!usingApi || !employee?.id || loading) return undefined;
 
-    syncCallyzerData();
+    syncCallyzerRef.current?.();
 
     const intervalId = window.setInterval(() => {
-      if (!document.hidden) syncCallyzerData();
+      if (!document.hidden) syncCallyzerRef.current?.();
     }, CALLYZER_SYNC_INTERVAL_MS);
 
     const onVisibility = () => {
-      if (!document.hidden) syncCallyzerData();
+      if (!document.hidden) syncCallyzerRef.current?.();
     };
     document.addEventListener("visibilitychange", onVisibility);
 
@@ -1469,7 +1501,7 @@ export function EmployeeProvider({ children }) {
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [usingApi, employee?.id, loading, syncCallyzerData]);
+  }, [usingApi, employee?.id, loading]);
 
   const value = useMemo(() => ({
     employee,

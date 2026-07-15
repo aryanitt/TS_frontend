@@ -507,7 +507,6 @@ export default function EmployeeCallDetail() {
               : c
           )));
         }
-        await refreshLeads();
       } else {
         const newLeadId = await createLeadFromCall({
           name: editName.trim(),

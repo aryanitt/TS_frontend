@@ -84,6 +84,16 @@ export function buildPipelineChartFromLeads(leads = []) {
   }));
 }
 
+/** Stable key for pipeline chart — only changes when stage counts change. */
+export function pipelineStageCountsKey(leads = []) {
+  const counts = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, 0]));
+  for (const lead of leads) {
+    const stageId = mapEmpLeadKanbanStage(lead.pipelineStage || lead.stage, lead.status);
+    counts[stageId] = (counts[stageId] || 0) + 1;
+  }
+  return EMP_KANBAN_STAGES.map((s) => counts[s.id] || 0).join(",");
+}
+
 export function buildSourceChartFromLeads(leads = []) {
   if (!leads.length) return [];
   const counts = {};
@@ -692,8 +702,14 @@ export function getEmpPipelineSummary(leads) {
       stage === "ni"
     );
   }).length;
+  const converted = leads.filter((l) => {
+    const stageId = mapEmpLeadKanbanStage(l.pipelineStage || l.stage, l.status);
+    return stageId === "converted" || String(l.status || "").toLowerCase() === "converted";
+  }).length;
+  const active = Math.max(0, total - notInterested);
+  const winRate = total ? Math.round((converted / total) * 100) : 0;
 
-  return { total, hot, warm, cold, value, notInterested };
+  return { total, hot, warm, cold, value, notInterested, active, winRate, converted };
 }
 
 export function getEmpStageMeta(stageId) {
@@ -751,15 +767,36 @@ export function isEmployeeNewAssignedLead(lead) {
   return assignStatus === "assigned" || assignStatus === "pending" || assignStatus === "unassigned";
 }
 
+export function resolvePipelineStageLabel(input, status = "") {
+  if (input == null || input === "") return undefined;
+  const raw = String(input).trim();
+  const byId = EMP_KANBAN_STAGES.find((stage) => stage.id === raw);
+  if (byId) return byId.label;
+  const byLabel = EMP_KANBAN_STAGES.find(
+    (stage) => stage.label.toLowerCase() === raw.toLowerCase(),
+  );
+  if (byLabel) return byLabel.label;
+  const stageId = mapEmpLeadKanbanStage(raw, status);
+  return getEmpStageMeta(stageId).label;
+}
+
 export function mapEmpLeadKanbanStage(stage, status) {
-  const s = (stage || "").toLowerCase();
+  const raw = String(stage || "").trim();
+  const s = raw.toLowerCase();
+  const normalized = s.replace(/_/g, " ");
   const st = (status || "").toLowerCase();
-  if (s.includes("converted") || s === "won" || s.includes("closed won")) return "converted";
-  if (s.includes("proposal sent") || s === "proposal sent") return "proposal_sent";
-  if (s.includes("showed up") || s.includes("showed-up") || s.includes("show up")) return "showed_up";
-  if (s.includes("booked") || s.includes("call booked")) return "booked";
-  if (s.includes("conversation")) return "conversation";
-  if (s.includes("proposal") || s.includes("negotiation")) return "proposal_sent";
+
+  const directId = EMP_KANBAN_STAGES.find(
+    (item) => item.id === s || item.id === raw || item.label.toLowerCase() === s || item.label.toLowerCase() === normalized,
+  );
+  if (directId) return directId.id;
+
+  if (normalized.includes("converted") || normalized === "won" || normalized.includes("closed won")) return "converted";
+  if (normalized.includes("proposal sent")) return "proposal_sent";
+  if (normalized.includes("showed up") || normalized.includes("show up")) return "showed_up";
+  if (normalized.includes("booked") || normalized.includes("call booked")) return "booked";
+  if (normalized.includes("conversation")) return "conversation";
+  if (normalized.includes("proposal") || normalized.includes("negotiation")) return "proposal_sent";
   if (
     s.includes("contacted")
     || s.includes("qualified")
