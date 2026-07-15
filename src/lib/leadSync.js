@@ -17,11 +17,15 @@ export function temperatureToApi(status) {
     hot: "Hot Lead",
     warm: "Warm Lead",
     cold: "Cold Lead",
-    notpick: "Cold Lead",
-    converted: "Hot Lead",
-    ni: "Cold Lead",
+    notpick: "Not Pick",
+    converted: "Converted",
+    ni: "Not Interested",
   };
   return map[status] || "Warm Lead";
+}
+
+export function workflowStatusFromTemperature(status) {
+  return temperatureToApi(status);
 }
 
 export function formatRelativeTime(iso) {
@@ -95,6 +99,7 @@ function workflowStatusFromStage(stageRaw) {
   if (s.includes("attempted")) return "attempted";
   if (s.includes("contacted") || s.includes("qualified")) return "contacted";
   if (s.includes("booked") || s.includes("call booked")) return "booked";
+  if (s.includes("showed up") || s.includes("showed-up") || s.includes("show up")) return "showed_up";
   if (s.includes("proposal")) return "proposal";
   if (s.includes("negotiation")) return "negotiation";
   if (s.includes("converted") || s === "won") return "converted";

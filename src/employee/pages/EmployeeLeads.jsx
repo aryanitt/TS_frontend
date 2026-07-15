@@ -195,7 +195,7 @@ export default function EmployeeLeads() {
     const lead = leads.find((l) => l.id === Number(leadId) || l.id === leadId);
     if (!lead) return;
     const target = getEmpStageMeta(stageId);
-    const currentStageId = mapEmpLeadKanbanStage(lead.stage, lead.status);
+    const currentStageId = mapEmpLeadKanbanStage(lead.pipelineStage || lead.stage, lead.status);
     if (currentStageId === stageId) {
       if (scroll) scrollToStage(stageId);
       return;

@@ -5,22 +5,55 @@ import {
   ArrowLeft, Phone, CalendarClock, Play, Pause, Sparkles,
   CheckCircle, Circle, Star, Smile, AlertCircle, RefreshCw,
   Clock, RotateCcw, Volume2, ShieldCheck, HelpCircle, ChevronRight,
-  User, CheckCircle2, History, ChevronDown, Pencil,
+  User, CheckCircle2, History, ChevronDown, Pencil, IndianRupee,
 } from "lucide-react";
 import { GlassCard, Badge } from "../../components/Primitives.jsx";
+import { CustomSelect } from "../../components/CustomSelect.jsx";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import {
   AvatarCircle, LeadStatusBadge, BtnPrimary, BtnSecondary, BtnGhost, EmpModal,
   FormInput, FormLabel, FormGroup, FormSelect, FormTextarea, FormRow
 } from "../components/EmpUI.jsx";
-import { LOCAL_SOPS, LEAD_STATUS_LABELS, getEmpStageMeta, mapEmpLeadKanbanStage } from "../../data/employeeMock.js";
+import { LOCAL_SOPS, LEAD_STATUS_LABELS, EMP_KANBAN_STAGES, getEmpStageMeta, mapEmpLeadKanbanStage, resolveLeadForCall } from "../../data/employeeMock.js";
+import { temperatureToApi, workflowStatusFromTemperature, apiLeadToEmployee, unwrapApiList } from "../../lib/leadSync.js";
 
-const EMP_STAGE_OPTIONS = [
-  { id: "conversation", label: "Conversation" },
-  { id: "booked", label: "Booked" },
-  { id: "showed_up", label: "Showed up" },
-  { id: "proposal_sent", label: "Proposal Sent" },
+const EMP_STAGE_OPTIONS = EMP_KANBAN_STAGES.map((stage) => ({
+  id: stage.id,
+  label: stage.label,
+}));
+
+const LEAD_STATUS_OPTIONS = [
+  { value: "hot", label: "Hot Lead 🔥" },
+  { value: "warm", label: "Warm Lead 😴" },
+  { value: "cold", label: "Cold Lead ❄️" },
+  { value: "converted", label: "Converted 💸" },
+  { value: "notpick", label: "Not Picked ❌" },
+  { value: "ni", label: "Not Interested 👎" },
 ];
+
+const PIPELINE_STAGE_OPTIONS = EMP_STAGE_OPTIONS.map((option) => ({
+  value: option.id,
+  label: option.label,
+}));
+
+function formatIndianCurrency(numStr) {
+  if (!numStr) return "";
+  const n = Number(numStr);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return n.toLocaleString("en-IN");
+}
+
+function budgetToEditDisplay(lead) {
+  if (!lead) return "";
+  if (Number(lead.expectedRevenue) > 0) {
+    return formatIndianCurrency(String(lead.expectedRevenue));
+  }
+  if (lead.budget && lead.budget !== "—") {
+    const digits = String(lead.budget).replace(/[^\d.]/g, "");
+    return digits ? formatIndianCurrency(digits) : "";
+  }
+  return "";
+}
 
 function stageToSelectValue(stage) {
   const stageId = mapEmpLeadKanbanStage(stage, "");
@@ -164,13 +197,14 @@ const formatTime24 = (hour, minute, ampm) => {
 export default function EmployeeCallDetail() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { calls = [], leads = [], addActivityRecord, scheduleFollowUp, editLeadDetails } = useEmployee();
+  const { calls = [], leads = [], setCalls, employee, addActivityRecord, scheduleFollowUp, editLeadDetails, refreshLeads } = useEmployee();
   const callId = searchParams.get("id");
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editStatus, setEditStatus] = useState("");
   const [editStage, setEditStage] = useState("");
+  const [editBudget, setEditBudget] = useState("");
 
   // Find active call log record
   const call = useMemo(() => {
@@ -178,11 +212,8 @@ export default function EmployeeCallDetail() {
     return calls.find((c) => String(c.id) === String(callId));
   }, [calls, callId]);
 
-  // Find associated lead
-  const lead = useMemo(() => {
-    if (!call) return null;
-    return leads.find((l) => String(l.id) === String(call.leadId));
-  }, [leads, call]);
+  // Find associated lead (by id, phone, or name — including partial match)
+  const lead = useMemo(() => resolveLeadForCall(call, leads), [call, leads]);
 
   // Find all calls for this lead (Call History)
   const leadCalls = useMemo(() => {
@@ -273,6 +304,7 @@ export default function EmployeeCallDetail() {
     setEditName(lead?.name || call.name || "");
     setEditStatus(lead?.status || "warm");
     setEditStage(stageToSelectValue(lead?.pipelineStage || lead?.stage));
+    setEditBudget(budgetToEditDisplay(lead));
   }, [lead, isEditOpen, call]);
 
   useEffect(() => {
@@ -368,6 +400,84 @@ export default function EmployeeCallDetail() {
     navigate(`/employee/call-assistant?lead=${encodeURIComponent(lead?.name || call.name)}`);
   };
 
+  const linkCallToLead = async (callRecordId, leadId, patch = {}) => {
+    const { apiPut } = await import("../../lib/api.js");
+    const { getCrmHeaders } = await import("../../lib/crmContext.js");
+    await apiPut(`/api/v1/employee/calls/${callRecordId}`, { leadId }, { headers: getCrmHeaders() });
+    setCalls((prev) => prev.map((c) => (
+      String(c.id) === String(callRecordId) ? { ...c, leadId, ...patch } : c
+    )));
+  };
+
+  const assignLeadToEmployee = async (leadId) => {
+    const { apiPost } = await import("../../lib/api.js");
+    const { getCrmHeaders, getAuthenticatedEmployeeId } = await import("../../lib/crmContext.js");
+    const employeeId = getAuthenticatedEmployeeId() || employee?.id;
+    if (!employeeId || !leadId) return;
+    await apiPost("/api/v1/assignment/assign", {
+      leadId,
+      employeeId,
+      method: "manual",
+    }, { headers: getCrmHeaders() });
+  };
+
+  const findExistingLeadForCall = async () => {
+    const localMatch = resolveLeadForCall(call, leads);
+    if (localMatch) return localMatch;
+
+    const { apiGet } = await import("../../lib/api.js");
+    const { getCrmHeaders, getAuthenticatedEmployeeId } = await import("../../lib/crmContext.js");
+    const employeeId = getAuthenticatedEmployeeId() || employee?.id;
+    if (!employeeId) return null;
+
+    const res = await apiGet(`/api/v1/employee/${employeeId}/leads`, {
+      headers: getCrmHeaders("employee", employee),
+      cacheTtl: 0,
+      skipCache: true,
+    });
+    const items = unwrapApiList(res);
+    if (!items?.length) return null;
+    const mapped = items.map((l) => apiLeadToEmployee(l));
+    return resolveLeadForCall(call, mapped);
+  };
+
+  const createLeadFromCall = async ({
+    name,
+    status = "warm",
+    pipelineStage = "Conversation",
+    expectedRevenue = 0,
+  }) => {
+    const existing = await findExistingLeadForCall();
+    if (existing?.id) {
+      await assignLeadToEmployee(existing.id);
+      await linkCallToLead(call.id, existing.id, { name: name.trim() });
+      return existing.id;
+    }
+
+    const { apiPost } = await import("../../lib/api.js");
+    const { getCrmHeaders } = await import("../../lib/crmContext.js");
+
+    const leadRes = await apiPost("/api/v1/leads", {
+      leadName: name.trim(),
+      phone: call.phone || "",
+      temperature: temperatureToApi(status),
+      status: workflowStatusFromTemperature(status),
+      pipelineStage,
+      companyName: call.company && call.company !== "—" ? call.company : "",
+      expectedRevenue,
+    }, { headers: getCrmHeaders() });
+
+    const newLead = leadRes?.data?.lead || leadRes?.data;
+    if (!newLead?.id) {
+      throw new Error("Failed to create lead profile for this call");
+    }
+
+    await assignLeadToEmployee(newLead.id);
+    await linkCallToLead(call.id, newLead.id, { name: name.trim() });
+    await refreshLeads();
+    return newLead.id;
+  };
+
   const handleEditConfirm = async (e) => {
     if (e) e.preventDefault();
     if (!editName.trim()) {
@@ -375,134 +485,119 @@ export default function EmployeeCallDetail() {
       return;
     }
 
-    if (lead) {
-      try {
-        await editLeadDetails(lead.id, {
-          name: editName,
+    const expectedRevenue = Number(String(editBudget).replace(/\D/g, "") || 0);
+    const pipelineStage = stageSelectToLabel(editStage);
+
+    try {
+      let targetLead = lead || await findExistingLeadForCall();
+
+      if (targetLead?.id) {
+        await editLeadDetails(targetLead.id, {
+          name: editName.trim(),
           status: editStatus,
-          pipelineStage: stageSelectToLabel(editStage),
+          pipelineStage,
+          expectedRevenue,
         });
-        toast.success("Lead details updated successfully");
-        setIsEditOpen(false);
-      } catch (err) {
-        toast.error(err.message || "Failed to update lead details");
-      }
-    } else if (call) {
-      try {
-        const { apiPost, apiPut } = await import("../../lib/api.js");
-        const { getCrmHeaders } = await import("../../lib/crmContext.js");
-        
-        // 1. Create the lead
-        const leadRes = await apiPost("/api/v1/leads", {
-          leadName: editName.trim(),
-          phone: call.phone || "",
-          temperature: editStatus,
-          pipelineStage: stageSelectToLabel(editStage),
-          companyName: call.company || ""
-        }, { headers: getCrmHeaders() });
-        
-        const newLead = leadRes?.data?.lead || leadRes?.lead || leadRes;
-        if (!newLead?.id) {
-          throw new Error("Failed to create new lead");
+        if (String(call.leadId) !== String(targetLead.id)) {
+          await linkCallToLead(call.id, targetLead.id, { name: editName.trim() });
+        } else {
+          setCalls((prev) => prev.map((c) => (
+            String(c.id) === String(call.id)
+              ? { ...c, name: editName.trim(), leadId: targetLead.id }
+              : c
+          )));
         }
-        
-        // 2. Associate the call log with the new lead
-        await apiPut(`/api/v1/employee/calls/${call.id}`, {
-          leadId: newLead.id
-        }, { headers: getCrmHeaders() });
-        
-        toast.success("Lead created and call history linked successfully");
-        setIsEditOpen(false);
-        window.location.reload();
-      } catch (err) {
-        toast.error(err.message || "Failed to link and update lead");
+        await refreshLeads();
+      } else {
+        const newLeadId = await createLeadFromCall({
+          name: editName.trim(),
+          status: editStatus,
+          pipelineStage,
+          expectedRevenue,
+        });
+        await editLeadDetails(newLeadId, {
+          name: editName.trim(),
+          status: editStatus,
+          pipelineStage,
+          expectedRevenue,
+        });
       }
+
+      toast.success("Lead details updated successfully");
+      setIsEditOpen(false);
+    } catch (err) {
+      toast.error(err.message || "Failed to update lead details");
     }
   };
 
   const handleStatusChange = async (newStatus) => {
-    if (lead) {
-      try {
-        await editLeadDetails(lead.id, { status: newStatus });
-        toast.success("Lead temperature updated successfully");
-      } catch (err) {
-        toast.error(err.message || "Failed to update temperature");
-      }
-    } else if (call) {
-      try {
-        const { apiPost, apiPut } = await import("../../lib/api.js");
-        const { getCrmHeaders } = await import("../../lib/crmContext.js");
-        
-        const leadRes = await apiPost("/api/v1/leads", {
-          leadName: call.name || "Unknown Lead",
-          phone: call.phone || "",
-          temperature: newStatus,
-          pipelineStage: "conversation",
-          companyName: call.company || ""
-        }, { headers: getCrmHeaders() });
-        
-        const newLead = leadRes?.data?.lead || leadRes?.lead || leadRes;
-        if (!newLead?.id) {
-          throw new Error("Failed to create new lead");
+    try {
+      const resolved = lead || await findExistingLeadForCall();
+      if (resolved?.id) {
+        if (String(call.leadId) !== String(resolved.id)) {
+          await linkCallToLead(call.id, resolved.id);
         }
-        
-        await apiPut(`/api/v1/employee/calls/${call.id}`, {
-          leadId: newLead.id
-        }, { headers: getCrmHeaders() });
-        
-        toast.success("Lead created and temperature updated");
-        window.location.reload();
-      } catch (err) {
-        toast.error(err.message || "Failed to link and update lead");
+        await editLeadDetails(resolved.id, { status: newStatus });
+      } else {
+        const leadId = await createLeadFromCall({
+          name: call.name || editName || "Unknown Lead",
+          status: newStatus,
+          pipelineStage: "Conversation",
+        });
+        await editLeadDetails(leadId, { status: newStatus });
       }
+      toast.success("Lead temperature updated successfully");
+    } catch (err) {
+      toast.error(err.message || "Failed to update temperature");
     }
   };
 
   const handleStageChange = async (newStage) => {
-    if (lead) {
-      try {
-        await editLeadDetails(lead.id, { pipelineStage: stageSelectToLabel(newStage) });
-        toast.success("Lead stage updated successfully");
-      } catch (err) {
-        toast.error(err.message || "Failed to update stage");
-      }
-    } else if (call) {
-      try {
-        const { apiPost, apiPut } = await import("../../lib/api.js");
-        const { getCrmHeaders } = await import("../../lib/crmContext.js");
-        
-        const leadRes = await apiPost("/api/v1/leads", {
-          leadName: call.name || "Unknown Lead",
-          phone: call.phone || "",
-          temperature: "warm",
-          pipelineStage: stageSelectToLabel(newStage),
-          companyName: call.company || ""
-        }, { headers: getCrmHeaders() });
-        
-        const newLead = leadRes?.data?.lead || leadRes?.lead || leadRes;
-        if (!newLead?.id) {
-          throw new Error("Failed to create new lead");
+    try {
+      const pipelineStage = stageSelectToLabel(newStage);
+      const resolved = lead || await findExistingLeadForCall();
+      if (resolved?.id) {
+        if (String(call.leadId) !== String(resolved.id)) {
+          await linkCallToLead(call.id, resolved.id);
         }
-        
-        await apiPut(`/api/v1/employee/calls/${call.id}`, {
-          leadId: newLead.id
-        }, { headers: getCrmHeaders() });
-        
-        toast.success("Lead created and stage updated");
-        window.location.reload();
-      } catch (err) {
-        toast.error(err.message || "Failed to link and update lead");
+        await editLeadDetails(resolved.id, { pipelineStage });
+      } else {
+        const leadId = await createLeadFromCall({
+          name: call.name || editName || "Unknown Lead",
+          status: "warm",
+          pipelineStage,
+        });
+        await editLeadDetails(leadId, { pipelineStage });
       }
+      toast.success("Lead stage updated successfully");
+    } catch (err) {
+      toast.error(err.message || "Failed to update stage");
     }
   };
 
-  const fetchNotes = async () => {
-    if (!lead?.id) return;
+  const ensureLeadForNotes = async () => {
+    if (lead?.id) {
+      if (!call.leadId) {
+        await linkCallToLead(call.id, lead.id);
+      }
+      return lead.id;
+    }
+
+    const leadId = await createLeadFromCall({
+      name: (call.name || "Unknown Lead").trim(),
+      status: "warm",
+      pipelineStage: "Conversation",
+    });
+    return leadId;
+  };
+
+  const fetchNotes = async (leadId = lead?.id) => {
+    if (!leadId) return;
     try {
       setNoteLoading(true);
       const { apiGet } = await import("../../lib/api.js");
       const { getCrmHeaders } = await import("../../lib/crmContext.js");
-      const res = await apiGet(`/api/v1/leads/${lead.id}/notes`, {
+      const res = await apiGet(`/api/v1/leads/${leadId}/notes`, {
         headers: getCrmHeaders(),
       });
       if (res?.success !== false) {
@@ -521,17 +616,18 @@ export default function EmployeeCallDetail() {
 
     try {
       setNoteSaving(true);
+      const leadId = await ensureLeadForNotes();
       const { apiPost } = await import("../../lib/api.js");
       const { getCrmHeaders } = await import("../../lib/crmContext.js");
       const res = await apiPost(
-        `/api/v1/leads/${lead.id}/notes`,
+        `/api/v1/leads/${leadId}/notes`,
         { body: newNote.trim() },
         { headers: getCrmHeaders() }
       );
       if (res) {
-        toast.success("Note added successfully");
+        toast.success(lead?.id ? "Note added successfully" : "Lead created and note saved");
         setNewNote("");
-        fetchNotes();
+        fetchNotes(leadId);
       }
     } catch (err) {
       toast.error(err.message || "Failed to add note");
@@ -807,48 +903,51 @@ export default function EmployeeCallDetail() {
             )}
           </div>
 
-          {/* Lead Notes & Comments Card */}
-          {lead && (
-            <GlassCard className="p-4 sm:p-5 flex flex-col gap-3">
-              <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 shrink-0 border-b border-rose-50 pb-2">
-                ✍️ Lead Notes & Comments
-              </h3>
-              
-              <form onSubmit={handleAddNote} className="space-y-2">
-                <FormTextarea
-                  rows={2}
-                  placeholder="Type a note or call details..."
-                  className="!rounded-xl border-rose-100/60 focus:border-rose-400 text-xs"
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  required
-                />
-                <div className="flex justify-end">
-                  <BtnPrimary type="submit" className="!py-1.5 !px-3 !text-[10.5px]" disabled={noteSaving}>
-                    {noteSaving ? "Saving..." : "Add Note"}
-                  </BtnPrimary>
-                </div>
-              </form>
+          {/* Lead Notes & Comments Card — always shown for every call profile */}
+          <GlassCard className="p-4 sm:p-5 flex flex-col gap-3">
+            <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 shrink-0 border-b border-rose-50 pb-2">
+              ✍️ Lead Notes & Comments
+            </h3>
 
-              {noteLoading ? (
-                <div className="text-center py-2 text-[11px] text-slate-450">Loading notes...</div>
-              ) : notesList.length === 0 ? (
-                <p className="text-[10.5px] text-slate-400 italic pl-1">No notes saved for this lead.</p>
-              ) : (
-                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1 scrollbar-thin">
-                  {notesList.map((n) => (
-                    <div key={n.id} className="bg-white border border-rose-50 rounded-xl p-2.5 space-y-1 text-[11px] shadow-[0_1px_2px_rgba(244,63,94,0.01)]">
-                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold">
-                        <span>👤 {n.authorType === "employee" ? "You" : "Admin"}</span>
-                        <span>{new Date(n.createdAt).toLocaleDateString()} {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      <p className="text-slate-750 leading-relaxed font-medium whitespace-pre-line">{n.body}</p>
+            {!lead && (
+              <p className="text-[10.5px] text-slate-500 bg-amber-50/60 border border-amber-100 rounded-lg px-2.5 py-2">
+                No lead linked yet. Your first note will create a lead profile for this contact automatically.
+              </p>
+            )}
+            
+            <form onSubmit={handleAddNote} className="space-y-2">
+              <FormTextarea
+                rows={2}
+                placeholder="Type a note or call details..."
+                className="!rounded-xl border-rose-100/60 focus:border-rose-400 text-xs"
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+              />
+              <div className="flex justify-end">
+                <BtnPrimary type="submit" className="!py-1.5 !px-3 !text-[10.5px]" disabled={noteSaving}>
+                  {noteSaving ? "Saving..." : "Add Note"}
+                </BtnPrimary>
+              </div>
+            </form>
+
+            {noteLoading ? (
+              <div className="text-center py-2 text-[11px] text-slate-450">Loading notes...</div>
+            ) : notesList.length === 0 ? (
+              <p className="text-[10.5px] text-slate-400 italic pl-1">No notes saved for this contact yet.</p>
+            ) : (
+              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1 scrollbar-thin">
+                {notesList.map((n) => (
+                  <div key={n.id} className="bg-white border border-rose-50 rounded-xl p-2.5 space-y-1 text-[11px] shadow-[0_1px_2px_rgba(244,63,94,0.01)]">
+                    <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold">
+                      <span>👤 {n.authorType === "employee" ? "You" : "Admin"}</span>
+                      <span>{new Date(n.createdAt).toLocaleDateString()} {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </GlassCard>
-          )}
+                    <p className="text-slate-750 leading-relaxed font-medium whitespace-pre-line">{n.body}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </GlassCard>
         </div>
 
         {/* Right Side: SOP Compliance Checklist & Call History (col-span-5) */}
@@ -1122,7 +1221,7 @@ export default function EmployeeCallDetail() {
         open={isEditOpen}
         onClose={() => setIsEditOpen(false)}
         title="Edit Lead Details"
-        subtitle="Update contact name, temperature status, and pipeline stage for this lead."
+        subtitle="Update contact name, lead status, pipeline stage, and budget."
         footer={
           <div className="flex items-center gap-2">
             <BtnGhost className="!py-1.5 !px-3" onClick={() => setIsEditOpen(false)}>
@@ -1147,29 +1246,41 @@ export default function EmployeeCallDetail() {
           </FormGroup>
           <FormGroup>
             <FormLabel>Lead Status / Temperature</FormLabel>
-            <FormSelect
+            <CustomSelect
               value={editStatus}
-              onChange={(e) => setEditStatus(e.target.value)}
-            >
-              <option value="hot">Hot Lead 🔥</option>
-              <option value="warm">Warm Lead 😴</option>
-              <option value="cold">Cold Lead ❄️</option>
-              <option value="converted">Converted 💸</option>
-              <option value="notpick">Not Picked ❌</option>
-              <option value="ni">Not Interested 👎</option>
-            </FormSelect>
+              onChange={setEditStatus}
+              options={LEAD_STATUS_OPTIONS}
+              placeholder="Select lead status…"
+            />
           </FormGroup>
           <FormGroup>
             <FormLabel>Pipeline Stage</FormLabel>
-            <FormSelect
+            <CustomSelect
               value={editStage}
-              onChange={(e) => setEditStage(e.target.value)}
-            >
-              <option value="conversation">Conversation</option>
-              <option value="booked">Booked</option>
-              <option value="showed_up">Showed up</option>
-              <option value="proposal_sent">Proposal Sent</option>
-            </FormSelect>
+              onChange={setEditStage}
+              options={PIPELINE_STAGE_OPTIONS}
+              placeholder="Select pipeline stage…"
+            />
+          </FormGroup>
+          <FormGroup>
+            <FormLabel>Budget / Deal Value</FormLabel>
+            <div className="relative">
+              <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-400 pointer-events-none" />
+              <FormInput
+                type="text"
+                inputMode="numeric"
+                value={editBudget}
+                onChange={(e) => {
+                  const rawVal = e.target.value.replace(/\D/g, "");
+                  setEditBudget(rawVal ? formatIndianCurrency(rawVal) : "");
+                }}
+                placeholder="e.g. 2,50,000 or 8,00,000"
+                className="!pl-9"
+              />
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1.5">
+              Enter the expected deal value in INR. Leave blank if not discussed yet.
+            </p>
           </FormGroup>
         </form>
       </EmpModal>

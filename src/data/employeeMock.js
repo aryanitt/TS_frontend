@@ -72,7 +72,7 @@ export const EMP_LEADS = [
 export function buildPipelineChartFromLeads(leads = []) {
   const counts = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, 0]));
   for (const lead of leads) {
-    const stageId = mapEmpLeadKanbanStage(lead.stage, lead.status);
+    const stageId = mapEmpLeadKanbanStage(lead.pipelineStage || lead.stage, lead.status);
     counts[stageId] = (counts[stageId] || 0) + 1;
   }
   const max = Math.max(1, ...Object.values(counts));
@@ -638,6 +638,7 @@ export const EMP_KANBAN_STAGES = [
   { id: "booked", label: "Booked", color: "#0ea5e9", badgeTone: "info" },
   { id: "showed_up", label: "Showed up", color: "#7c3aed", badgeTone: "primary" },
   { id: "proposal_sent", label: "Proposal Sent", color: "#f59e0b", badgeTone: "warning" },
+  { id: "converted", label: "Converted", color: "#10b981", badgeTone: "success" },
 ];
 
 export function parseEmpBudget(budget) {
@@ -753,13 +754,12 @@ export function isEmployeeNewAssignedLead(lead) {
 export function mapEmpLeadKanbanStage(stage, status) {
   const s = (stage || "").toLowerCase();
   const st = (status || "").toLowerCase();
+  if (s.includes("converted") || s === "won" || s.includes("closed won")) return "converted";
   if (s.includes("proposal sent") || s === "proposal sent") return "proposal_sent";
   if (s.includes("showed up") || s.includes("showed-up") || s.includes("show up")) return "showed_up";
   if (s.includes("booked") || s.includes("call booked")) return "booked";
   if (s.includes("conversation")) return "conversation";
-  if (s.includes("proposal") || s.includes("negotiation") || s.includes("converted") || s === "won") {
-    return "proposal_sent";
-  }
+  if (s.includes("proposal") || s.includes("negotiation")) return "proposal_sent";
   if (
     s.includes("contacted")
     || s.includes("qualified")
@@ -770,7 +770,8 @@ export function mapEmpLeadKanbanStage(stage, status) {
   ) {
     return "conversation";
   }
-  if (st.includes("proposal") || st === "converted") return "proposal_sent";
+  if (st === "converted") return "converted";
+  if (st.includes("proposal")) return "proposal_sent";
   if (st.includes("booked")) return "booked";
   return "conversation";
 }
@@ -778,7 +779,7 @@ export function mapEmpLeadKanbanStage(stage, status) {
 export function groupEmpLeadsKanban(leads) {
   const map = Object.fromEntries(EMP_KANBAN_STAGES.map((s) => [s.id, []]));
   leads.forEach((l) => {
-    const id = mapEmpLeadKanbanStage(l.stage, l.status);
+    const id = mapEmpLeadKanbanStage(l.pipelineStage || l.stage, l.status);
     if (map[id]) map[id].push(l);
   });
   return map;
@@ -1091,6 +1092,49 @@ export function phonesMatchLoose(a, b) {
   if (!da || !db) return false;
   if (da === db) return true;
   return da.slice(-10) === db.slice(-10);
+}
+
+export function resolveLeadForCall(call, leadList = []) {
+  if (!call || !Array.isArray(leadList)) return null;
+
+  if (call.leadId) {
+    const byId = leadList.find((l) => String(l.id) === String(call.leadId));
+    if (byId) return byId;
+  }
+
+  const phone = call.phone || "";
+  if (phone) {
+    const byPhone = leadList.find((l) => phonesMatchLoose(l.phone, phone));
+    if (byPhone) return byPhone;
+  }
+
+  const name = (call.name || "").trim().toLowerCase();
+  if (name && name !== "unknown lead" && name !== "unknown") {
+    const byExact = leadList.find((l) => String(l.name || "").trim().toLowerCase() === name);
+    if (byExact) return byExact;
+
+    const byPartial = leadList.find((l) => {
+      const leadName = String(l.name || "").trim().toLowerCase();
+      if (!leadName) return false;
+      return leadName.includes(name) || name.includes(leadName);
+    });
+    if (byPartial) return byPartial;
+  }
+
+  return null;
+}
+
+export function mergeCallsById(prev, next) {
+  if (!Array.isArray(next) || next.length === 0) {
+    return Array.isArray(prev) ? prev : [];
+  }
+  const map = new Map((Array.isArray(prev) ? prev : []).map((c) => [String(c.id), c]));
+  next.forEach((c) => map.set(String(c.id), c));
+  return Array.from(map.values()).sort((a, b) => {
+    const ta = new Date(a.callAt || a.date || 0).getTime();
+    const tb = new Date(b.callAt || b.date || 0).getTime();
+    return tb - ta;
+  });
 }
 
 export function callFromApi(apiCall, leads = []) {
