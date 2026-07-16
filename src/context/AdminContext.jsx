@@ -42,6 +42,7 @@ export const DEFAULT_ADMIN = {
 
 function loadProfile() {
   try {
+    if (typeof localStorage === "undefined") return { ...DEFAULT_ADMIN };
     const raw = localStorage.getItem(STORAGE_KEY);
     const stored = raw ? { ...DEFAULT_ADMIN, ...JSON.parse(raw) } : { ...DEFAULT_ADMIN };
     const authUser = getStoredAuthUser();
@@ -58,6 +59,7 @@ const AdminContext = createContext(null);
 export function AdminProvider({ children }) {
   const { user } = useAuth();
   const [admin, setAdmin] = useState(loadProfile);
+  const [selectedService, setSelectedService] = useState("All Services");
 
   useEffect(() => {
     if (user?.role === "admin") {
@@ -82,8 +84,10 @@ export function AdminProvider({ children }) {
       admin,
       updateAdmin,
       updateNotifications,
+      selectedService,
+      setSelectedService,
     }),
-    [admin],
+    [admin, selectedService],
   );
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
