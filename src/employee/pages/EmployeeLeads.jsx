@@ -28,23 +28,51 @@ import EmployeeLeadDrawer from "../components/EmployeeLeadDrawer.jsx";
 import { LeadStatusBadge } from "../components/EmpUI.jsx";
 
 
+function startLeadCardDrag(e, leadId, onDragStart) {
+  e.dataTransfer.setData("text/plain", String(leadId));
+  e.dataTransfer.setData("text/lead-id", String(leadId));
+  e.dataTransfer.effectAllowed = "move";
+  onDragStart?.();
+}
+
+function isDraggablePipelineLead(lead) {
+  if (!lead || lead._fromCall || lead._fromMeeting) return false;
+  return /^\d+$/.test(String(lead.id));
+}
+
 function LeadCard({ lead, periodCalls, onOpen, isDragging, onDragStart, onDragEnd, isNewAssigned }) {
   const lastLabel = resolveLeadLastActivityLabel(lead, periodCalls);
+  const canDrag = isDraggablePipelineLead(lead);
 
   return (
     <div
-      draggable
+      draggable={canDrag}
       onDragStart={(e) => {
-        e.dataTransfer.setData("text/lead-id", String(lead.id));
-        e.dataTransfer.effectAllowed = "move";
-        onDragStart?.();
+        if (!canDrag) {
+          e.preventDefault();
+          return;
+        }
+        startLeadCardDrag(e, lead.id, onDragStart);
       }}
       onDragEnd={onDragEnd}
       className={`rounded-xl border bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start ${
         isNewAssigned ? "border-rose-300 ring-1 ring-rose-100" : "border-rose-100"
-      } ${isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"}`}
+      } ${canDrag ? "cursor-grab active:cursor-grabbing select-none" : ""} ${
+        isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"
+      }`}
     >
-      <button type="button" onClick={onOpen} className="w-full text-left p-3">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+        className="w-full text-left p-3"
+      >
         {isNewAssigned && (
           <span className="inline-block mb-1.5 text-[8px] font-black uppercase tracking-wider text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
             Admin assigned
@@ -61,7 +89,7 @@ function LeadCard({ lead, periodCalls, onOpen, isDragging, onDragStart, onDragEn
           <span className="text-xs font-black text-rose-700 tabular-nums">{lead.budget}</span>
           <span className="text-[9px] font-medium text-slate-400">{lastLabel}</span>
         </div>
-      </button>
+      </div>
     </div>
   );
 }
@@ -89,6 +117,7 @@ export default function EmployeeLeads() {
   const [dropStageId, setDropStageId] = useState(null);
   const [cashCollections, setCashCollections] = useState([]);
   const columnRefs = useRef({});
+  const dropDepthRef = useRef(0);
   const period = String(searchParams.get("period") || "month").toLowerCase();
   const periodLabel = period === "today" ? "Today" : period === "week" ? "This Week" : "This Month";
 
@@ -260,9 +289,46 @@ export default function EmployeeLeads() {
     });
   };
 
+  const resolvePipelineLead = (leadId) => {
+    const id = String(leadId);
+    const hit = leads.find((l) => String(l.id) === id);
+    if (hit) return hit;
+    for (const stage of EMP_KANBAN_STAGES) {
+      const fromCol = (grouped[stage.id] || []).find((l) => String(l.id) === id);
+      if (fromCol) return fromCol;
+    }
+    return null;
+  };
+
+  const handleDragEnter = (stageId) => {
+    dropDepthRef.current += 1;
+    setDropStageId(stageId);
+  };
+
+  const handleDragLeave = () => {
+    dropDepthRef.current = Math.max(0, dropDepthRef.current - 1);
+    if (dropDepthRef.current === 0) setDropStageId(null);
+  };
+
+  const handleDrop = (e, stageId) => {
+    e.preventDefault();
+    dropDepthRef.current = 0;
+    setDropStageId(null);
+    setDragLeadId(null);
+    const id = e.dataTransfer.getData("text/plain") || e.dataTransfer.getData("text/lead-id");
+    if (id) moveLeadToStage(id, stageId);
+  };
+
   const moveLeadToStage = (leadId, stageId, { scroll = true } = {}) => {
-    const lead = leads.find((l) => l.id === Number(leadId) || l.id === leadId);
-    if (!lead) return;
+    const lead = resolvePipelineLead(leadId);
+    if (!lead) {
+      toast.error("This card can't be moved — it isn't linked to a CRM lead yet.");
+      return;
+    }
+    if (!isDraggablePipelineLead(lead)) {
+      toast.error("Link this Callyzer call to a lead before moving it.");
+      return;
+    }
     const target = getEmpStageMeta(stageId);
     const currentStageId = resolveLeadKanbanColumn(lead, periodCalls, { scopeByAssignee: true });
     if (currentStageId === stageId) {
@@ -270,6 +336,7 @@ export default function EmployeeLeads() {
       return;
     }
     updateLeadStage(lead.id, target.label, { fromNewAssigned: isPipelineNewAssigned(lead) });
+    clearPipelineGroupedCache();
     if (scroll) scrollToStage(stageId);
     toast.success(
       isPipelineNewAssigned(lead)
@@ -452,18 +519,14 @@ export default function EmployeeLeads() {
                 </button>
 
                 <div
+                  onDragEnter={() => handleDragEnter(stage.id)}
                   onDragOver={(e) => {
                     e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
                     setDropStageId(stage.id);
                   }}
-                  onDragLeave={() => setDropStageId(null)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDropStageId(null);
-                    setDragLeadId(null);
-                    const id = e.dataTransfer.getData("text/lead-id");
-                    if (id) moveLeadToStage(id, stage.id);
-                  }}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, stage.id)}
                   className={`rounded-xl border p-2 transition ${
                     isDropTarget
                       ? "border-rose-400 bg-rose-50/80 ring-2 ring-rose-200"
@@ -537,18 +600,14 @@ export default function EmployeeLeads() {
                   </button>
 
                   <div
+                    onDragEnter={() => handleDragEnter(stage.id)}
                     onDragOver={(e) => {
                       e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
                       setDropStageId(stage.id);
                     }}
-                    onDragLeave={() => setDropStageId(null)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setDropStageId(null);
-                      setDragLeadId(null);
-                      const id = e.dataTransfer.getData("text/lead-id");
-                      if (id) moveLeadToStage(id, stage.id);
-                    }}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, stage.id)}
                     className={`rounded-xl border p-2 space-y-2 max-h-[calc(100dvh-400px)] min-h-[320px] overflow-y-auto overscroll-contain scrollbar-thin transition ${
                       isDropTarget
                         ? "border-rose-400 bg-rose-50/80 ring-2 ring-rose-200"

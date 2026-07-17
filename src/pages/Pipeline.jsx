@@ -28,24 +28,51 @@ import { filterCallsForPeriod } from "../lib/periodFilter.js";
 import { resolveLeadKanbanColumn, getPipelineStagePillCount } from "../lib/leadKanban.js";
 import { resolveLeadLastActivityLabel } from "../lib/callDisplay.js";
 
+function startLeadCardDrag(e, leadId, onDragStart) {
+  e.dataTransfer.setData("text/plain", String(leadId));
+  e.dataTransfer.setData("text/lead-id", String(leadId));
+  e.dataTransfer.effectAllowed = "move";
+  onDragStart?.();
+}
+
+function isDraggablePipelineLead(lead) {
+  if (!lead || lead._fromCall || lead._fromMeeting) return false;
+  const dbId = lead._dbId ?? lead.id;
+  return /^\d+$/.test(String(dbId));
+}
+
 function LeadCard({ lead, periodCalls, onOpen, isDragging, onDragStart, onDragEnd }) {
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
   const lastLabel = resolveLeadLastActivityLabel(lead, periodCalls);
+  const canDrag = isDraggablePipelineLead(lead);
 
   return (
     <div
-      draggable
+      draggable={canDrag}
       onDragStart={(e) => {
-        e.dataTransfer.setData("text/lead-id", String(lead.id));
-        e.dataTransfer.effectAllowed = "move";
-        onDragStart?.();
+        if (!canDrag) {
+          e.preventDefault();
+          return;
+        }
+        startLeadCardDrag(e, lead._dbId ?? lead.id, onDragStart);
       }}
       onDragEnd={onDragEnd}
-      className={`rounded-xl border border-rose-100 bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start sm:cursor-grab sm:active:cursor-grabbing ${
-        isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"
-      }`}
+      className={`rounded-xl border border-rose-100 bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start ${
+        canDrag ? "cursor-grab active:cursor-grabbing select-none" : ""
+      } ${isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"}`}
     >
-      <button type="button" onClick={onOpen} className="w-full text-left p-3">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+        className="w-full text-left p-3"
+      >
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
             <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{lead.name}</p>
@@ -57,7 +84,7 @@ function LeadCard({ lead, periodCalls, onOpen, isDragging, onDragStart, onDragEn
           <span className="text-xs font-black text-rose-700 tabular-nums">{formatPipelineValue(lead.value)}</span>
           <span className="text-[9px] font-medium text-slate-400">{lastLabel}</span>
         </div>
-      </button>
+      </div>
     </div>
   );
 }
@@ -131,7 +158,7 @@ export default function Pipeline() {
     dropDepthRef.current = 0;
     setDropStageId(null);
     setDragLeadId(null);
-    const id = e.dataTransfer.getData("text/lead-id");
+    const id = e.dataTransfer.getData("text/plain") || e.dataTransfer.getData("text/lead-id");
     if (id) moveLeadToStage(id, stageId);
   };
 
@@ -240,9 +267,25 @@ export default function Pipeline() {
   };
 
   const moveLeadToStage = (leadId, stageId, { scroll = true } = {}) => {
-    const lead = leads.find((l) => String(l.id) === String(leadId));
+    const id = String(leadId);
+    let lead = leads.find((l) => String(l.id) === id || String(l._dbId) === id);
     if (!lead) {
-      if (scroll) scrollToStage(stageId);
+      for (const stage of PIPELINE_STAGES) {
+        const fromCol = (grouped[stage.id] || []).find(
+          (l) => String(l.id) === id || String(l._dbId) === id,
+        );
+        if (fromCol) {
+          lead = fromCol;
+          break;
+        }
+      }
+    }
+    if (!lead) {
+      toast.error("This card can't be moved — it isn't linked to a CRM lead yet.");
+      return;
+    }
+    if (!isDraggablePipelineLead(lead)) {
+      toast.error("Link this Callyzer call to a lead before moving it.");
       return;
     }
     const currentStageId = resolveLeadKanbanColumn(lead, periodCalls, { scopeByAssignee: true });
@@ -258,6 +301,7 @@ export default function Pipeline() {
       stageId === "payment_complete" ? "won" : "note",
     );
     applyLeadUpdate(updated);
+    clearPipelineGroupedCache();
     const dbId = lead._dbId || leadId;
     if (dbId && String(dbId).match(/^\d+$/)) {
       const stageLabel = adminPipelineIdToDbStage(stageId);
