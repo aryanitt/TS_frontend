@@ -1,5 +1,6 @@
 import { parseCallDurationSeconds } from "./callMetrics.js";
 import { localDateKey } from "./periodFilter.js";
+import { APP_TZ, parseAppDateTime } from "./timezone.js";
 
 function startOfDay(date = new Date()) {
   const d = new Date(date);
@@ -9,6 +10,7 @@ function startOfDay(date = new Date()) {
 
 function formatTimePart(d) {
   return d.toLocaleTimeString("en-IN", {
+    timeZone: APP_TZ,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -42,6 +44,8 @@ export function parseCallDate(value) {
   }
 
   const isoLike = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const appParsed = parseAppDateTime(isoLike);
+  if (appParsed) return appParsed;
   const parsed = new Date(isoLike);
   if (!Number.isNaN(parsed.getTime())) return parsed;
 
@@ -71,10 +75,13 @@ export function formatCallDisplayDate(value, now = new Date()) {
   if (callKey === todayKey) return `Today, ${timePart}`;
   if (callKey === yesterdayKey) return `Yesterday, ${timePart}`;
 
+  const nowYear = Number(new Intl.DateTimeFormat("en", { timeZone: APP_TZ, year: "numeric" }).format(now));
+  const callYear = Number(new Intl.DateTimeFormat("en", { timeZone: APP_TZ, year: "numeric" }).format(d));
   const datePart = d.toLocaleDateString("en-IN", {
+    timeZone: APP_TZ,
     day: "numeric",
     month: "short",
-    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    year: callYear !== nowYear ? "numeric" : undefined,
   });
   return `${datePart}, ${timePart}`;
 }
