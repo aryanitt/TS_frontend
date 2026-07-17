@@ -403,6 +403,10 @@ function placeMeetingsOnKanban(map, placed, allLeads, meetings, period, showLead
 export function leadFromOrphanCall(call, col = "lead") {
   const phone = call.phone || call.clientPhone || "";
   const name = call.name || call.clientName || (phone ? phone.slice(-10) : "Unknown");
+  const callAt = call.callAt || call.startedAt || call.createdAt || null;
+  const lastLabel = callAt
+    ? formatCallDisplayDate(callAt)
+    : (call.date && call.date !== "—" ? call.date : null);
   return {
     id: `call-${call.id}`,
     name,
@@ -411,12 +415,38 @@ export function leadFromOrphanCall(call, col = "lead") {
     stage: col === "conversation_2min" ? "Conversation" : col === "not_pick" ? "Not Pick" : "Lead",
     status: col === "conversation_2min" ? "contacted" : col === "not_pick" ? "notpick" : "new",
     budget: "—",
-    last: formatCallDisplayDate(call.callAt || call.startedAt || call.date),
+    callAt,
+    startedAt: callAt,
+    date: callAt,
+    last: lastLabel || "—",
     source: "Callyzer",
     _fromCall: true,
     _callId: call.id,
     _callCol: col,
   };
+}
+
+function latestRawCallTimestamp(calls = []) {
+  let latestMs = 0;
+  let latestRaw = null;
+  for (const call of calls) {
+    const raw = call?.callAt || call?.startedAt || call?.createdAt || call?.date;
+    if (!raw) continue;
+    const ms = new Date(String(raw).replace(" ", "T")).getTime();
+    if (Number.isNaN(ms)) continue;
+    if (ms > latestMs) {
+      latestMs = ms;
+      latestRaw = raw;
+    }
+  }
+  return latestRaw;
+}
+
+function withLatestCallTimestamp(lead, calls = []) {
+  if (!lead || lead._fromCall || lead.callAt) return lead;
+  const raw = latestRawCallTimestamp(calls);
+  if (!raw) return lead;
+  return { ...lead, callAt: raw, startedAt: raw };
 }
 
 /**
@@ -498,7 +528,7 @@ export function groupKanbanSyncedWithCallyzer(
     let col = null;
     if (leadHasConversation2MinPlus(leadCalls, { outboundOnly: false })) col = "conversation_2min";
     else if (leadHasNotPickCall(outboundCalls, { outboundOnly: true })) col = "not_pick";
-    if (col && col !== "lead") pushLead(col, lead);
+    if (col && col !== "lead") pushLead(col, withLatestCallTimestamp(lead, leadCalls));
   }
 
   // Orphan calls with no CRM lead match — still show from Callyzer (inbound + outbound).
@@ -525,7 +555,7 @@ export function groupKanbanSyncedWithCallyzer(
     if (!allowUncontacted || !uncontactedNew || !inAssignPeriod) {
       if (!(options.adminScope && isNewPipelineLead(lead) && !outboundLeadIds.has(id))) continue;
     }
-    pushLead("lead", lead);
+    pushLead("lead", withLatestCallTimestamp(lead, getLeadCalls(lead)));
   }
 
   return map;

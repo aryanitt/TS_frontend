@@ -1,6 +1,75 @@
-import { parseCallDurationSeconds } from "./callMetrics.js";
+import { parseCallDurationSeconds, phonesMatchLoose } from "./callMetrics.js";
 import { localDateKey } from "./periodFilter.js";
 import { APP_TZ, parseAppDateTime } from "./timezone.js";
+
+function resolveCallTimestamp(raw) {
+  if (raw == null || raw === "" || raw === "—") return null;
+  const parsed = parseCallDate(raw);
+  return parsed ? parsed.toISOString() : null;
+}
+
+/** Best timestamp for a pipeline card — latest call, assignment, or activity. */
+export function resolveLeadLastCallTimestamp(lead, periodCalls = []) {
+  if (!lead) return null;
+
+  for (const raw of [lead.callAt, lead.startedAt, lead.lastCallAt, lead.latestCallAt]) {
+    const ts = resolveCallTimestamp(raw);
+    if (ts) return ts;
+  }
+
+  if (lead._fromCall && lead._callId != null) {
+    const call = (Array.isArray(periodCalls) ? periodCalls : []).find(
+      (c) => String(c.id) === String(lead._callId),
+    );
+    if (call) {
+      const ts = resolveCallTimestamp(call.callAt || call.startedAt || call.createdAt || call.date);
+      if (ts) return ts;
+    }
+  }
+
+  let latestMs = 0;
+  let latestRaw = null;
+  for (const call of Array.isArray(periodCalls) ? periodCalls : []) {
+    const matchesLead = call.leadId != null && String(call.leadId) === String(lead.id);
+    const leadPhone = lead.phone || lead.clientPhone;
+    const callPhone = call.phone || call.clientPhone;
+    const matchesPhone = leadPhone && callPhone && phonesMatchLoose(leadPhone, callPhone);
+    if (!matchesLead && !matchesPhone) continue;
+
+    const raw = call.callAt || call.startedAt || call.createdAt || call.date;
+    const d = parseCallDate(raw);
+    if (!d) continue;
+    const ms = d.getTime();
+    if (ms > latestMs) {
+      latestMs = ms;
+      latestRaw = raw;
+    }
+  }
+  if (latestRaw) {
+    const ts = resolveCallTimestamp(latestRaw);
+    if (ts) return ts;
+  }
+
+  for (const raw of [
+    lead.lastActivityAt,
+    lead.assignedAt,
+    lead.assigned_at,
+    lead.updatedAt,
+    lead.updated_at,
+    lead.createdAt,
+    lead.created_at,
+  ]) {
+    const ts = resolveCallTimestamp(raw);
+    if (ts) return ts;
+  }
+
+  if (lead.last && lead.last !== "—") {
+    const ts = resolveCallTimestamp(lead.last);
+    if (ts) return ts;
+  }
+
+  return null;
+}
 
 function startOfDay(date = new Date()) {
   const d = new Date(date);
@@ -88,34 +157,9 @@ export function formatCallDisplayDate(value, now = new Date()) {
 
 /** Latest call in period for a lead → friendly label; falls back to lead activity date. */
 export function resolveLeadLastActivityLabel(lead, periodCalls = []) {
-  if (!lead) return "—";
-
-  if (lead._fromCall) {
-    return formatCallDisplayDate(lead.callAt || lead.startedAt || lead.date);
-  }
-
-  let latestMs = 0;
-  for (const call of periodCalls) {
-    const matchesLead = call.leadId != null && String(call.leadId) === String(lead.id);
-    const leadPhone = lead.phone || lead.clientPhone;
-    const callPhone = call.phone || call.clientPhone;
-    const matchesPhone = leadPhone && callPhone && (
-      String(leadPhone).replace(/\D/g, "").slice(-10) === String(callPhone).replace(/\D/g, "").slice(-10)
-    );
-    if (!matchesLead && !matchesPhone) continue;
-
-    const d = parseCallDate(call.callAt || call.startedAt || call.createdAt || call.date);
-    if (!d) continue;
-    const ms = d.getTime();
-    if (ms > latestMs) latestMs = ms;
-  }
-
-  if (latestMs > 0) {
-    return formatCallDisplayDate(new Date(latestMs).toISOString());
-  }
-
-  const fallback = lead.lastActivityAt || lead.updatedAt || lead.createdAt;
-  return fallback ? formatCallDisplayDate(fallback) : (lead.last || "—");
+  const ts = resolveLeadLastCallTimestamp(lead, periodCalls);
+  if (ts) return formatCallDisplayDate(ts);
+  return "—";
 }
 
 /** Format seconds as mm:ss or h:mm:ss for connected calls. */
