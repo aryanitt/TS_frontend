@@ -719,8 +719,10 @@ export function EmployeeProvider({ children }) {
     });
   }, []);
 
-  const scheduleFollowUp = useCallback(async ({ leadName, company, type, date, time, note, leadId }) => {
-    const lead = leads.find((l) => l.name === leadName || l.id === leadId);
+  const scheduleFollowUp = useCallback(async ({ leadName, company, type, date, time, note, leadId, phone }) => {
+    const lead = leadId != null
+      ? leads.find((l) => String(l.id) === String(leadId))
+      : null;
     const resolvedLeadId = leadId ?? lead?.id;
     const urgency = getFollowUpUrgency(date);
     const resolvedCompany = company || lead?.company || "—";

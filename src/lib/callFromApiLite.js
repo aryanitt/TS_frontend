@@ -39,7 +39,6 @@ export function callFromApiLite(apiCall, leads = []) {
   const lead = resolveLeadForCall({
     leadId: apiCall.leadId ?? apiCall.lead_id,
     phone: apiCall.clientPhone || apiCall.client_phone || apiCall.phone,
-    name: apiCall.clientName || apiCall.client_name || apiCall.name,
   }, leads);
 
   const durationRaw = apiCall.durationSec ?? apiCall.duration_sec ?? apiCall.duration;
@@ -53,18 +52,19 @@ export function callFromApiLite(apiCall, leads = []) {
     : dir;
   const callAt = apiCall.startedAt || apiCall.started_at || apiCall.createdAt || apiCall.created_at || null;
   const connected = durationSec > 0;
+  const phone = lead?.phone || apiCall.clientPhone || apiCall.client_phone || apiCall.phone || "";
 
   return {
     id: apiCall.id,
     leadId: apiCall.leadId ?? apiCall.lead_id ?? lead?.id ?? null,
     employeeId: apiCall.employeeId ?? apiCall.employee_id ?? null,
-    name: lead?.name || lead?.leadName || apiCall.clientName || apiCall.client_name || "Unknown Lead",
+    name: lead?.name || lead?.leadName || apiCall.clientName || apiCall.client_name || (phone ? phone.slice(-10) : "Unknown Lead"),
     company: lead?.company || lead?.companyName || apiCall.clientCompany || apiCall.client_company || "—",
     durationSec,
     connected,
     direction,
     type,
-    phone: lead?.phone || apiCall.clientPhone || apiCall.client_phone || apiCall.phone || "",
+    phone,
     clientPhone: apiCall.clientPhone || apiCall.client_phone || apiCall.phone || "",
     outcome: apiCall.outcome || (connected ? "Connected" : "Call logged"),
     duration: connected ? formatCallDuration(durationSec) : "—",

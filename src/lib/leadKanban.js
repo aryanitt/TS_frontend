@@ -134,6 +134,21 @@ function buildLeadLookupIndex(leads = []) {
   return { byId, byPhone };
 }
 
+/** Match leads to calls by leadId or phone only — never by name (many leads share "Unknown"). */
+function resolveLeadByPhone(callPhone, index, leads = []) {
+  if (!callPhone) return null;
+  const key = phoneLast10(callPhone);
+  if (key) {
+    const hit = index.byPhone.get(key);
+    if (hit) return hit;
+  }
+  const list = Array.isArray(leads) ? leads : [];
+  return list.find((l) => {
+    const leadPhone = l.phone || l.clientPhone;
+    return leadPhone && phonesMatchLoose(leadPhone, callPhone);
+  }) || null;
+}
+
 function resolveLeadForCallFromIndex(call, index, leads = []) {
   if (!call) return null;
   if (call.leadId != null) {
@@ -141,18 +156,7 @@ function resolveLeadForCallFromIndex(call, index, leads = []) {
     if (byId) return byId;
   }
   const callPhone = call.phone || call.clientPhone;
-  if (callPhone) {
-    const byPhone = index.byPhone.get(phoneLast10(callPhone));
-    if (byPhone) return byPhone;
-  }
-  const callName = call.name || call.clientName;
-  if (callName && callName !== "Unknown Lead") {
-    const lower = String(callName).toLowerCase();
-    const list = Array.isArray(leads) ? leads : [];
-    const byName = list.find((l) => String(l.name || l.leadName || "").toLowerCase() === lower);
-    if (byName) return byName;
-  }
-  return null;
+  return resolveLeadByPhone(callPhone, index, leads);
 }
 
 /** Build O(1) lead/call lookups for kanban grouping (684 leads × 200 calls). */
@@ -356,10 +360,11 @@ export function resolveMeetingLead(meeting, allLeads = []) {
     const byId = list.find((l) => String(l.id) === String(meeting.leadId));
     if (byId) return byId;
   }
-  if (meeting.lead) {
-    const name = String(meeting.lead).toLowerCase();
-    const byName = list.find((l) => String(l.name || "").toLowerCase() === name);
-    if (byName) return byName;
+  const meetingPhone = meeting.phone || meeting.leadPhone || meeting.clientPhone;
+  if (meetingPhone) {
+    const index = buildLeadLookupIndex(list);
+    const byPhone = resolveLeadByPhone(meetingPhone, index, list);
+    if (byPhone) return byPhone;
   }
   return leadFromMeeting(meeting);
 }
