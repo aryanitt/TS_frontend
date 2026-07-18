@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useDeferredValue, memo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Search, Plus, Kanban, Flame, TrendingUp, Thermometer, Snowflake, ThumbsDown } from "lucide-react";
 import toast from "react-hot-toast";
@@ -20,13 +20,11 @@ import { useAdmin } from "../context/AdminContext.jsx";
 import { adminPipelineIdToDbStage } from "../lib/leadSync.js";
 import useIsMobile from "../lib/useIsMobile.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../lib/segmentPills.js";
-import { CALL_CONVERSATION_LABEL, dedupePeriodCalls } from "../lib/callMetrics.js";
-import { usePipelineBoard, clearPipelineGroupedCache } from "../lib/usePipelineBoard.js";
-import { usePipelineSync } from "../lib/usePipelineSync.js";
-import { useAdminSyncedPeriodCalls } from "../lib/useAdminSyncedPeriodCalls.js";
-import { filterCallsForPeriod } from "../lib/periodFilter.js";
+import { CALL_CONVERSATION_LABEL } from "../lib/callMetrics.js";
+import { usePipelineBoard, visibleKanbanColumnLeads, hiddenKanbanColumnCount } from "../lib/usePipelineBoard.js";
+import { usePipelineSync, invalidatePipelineBoardCache } from "../lib/usePipelineSync.js";
 import { resolveLeadKanbanColumn, getPipelineStagePillCount } from "../lib/leadKanban.js";
-import { resolveLeadLastActivityLabel } from "../lib/callDisplay.js";
+import { buildLeadActivityLabelMap } from "../lib/callDisplay.js";
 
 function startLeadCardDrag(e, leadId, onDragStart) {
   e.dataTransfer.setData("text/plain", String(leadId));
@@ -41,9 +39,8 @@ function isDraggablePipelineLead(lead) {
   return /^\d+$/.test(String(dbId));
 }
 
-function LeadCard({ lead, periodCalls, onOpen, isDragging, onDragStart, onDragEnd }) {
+const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, onDragStart, onDragEnd }) {
   const priorityTone = PRIORITY_BADGE[lead.priority] || "muted";
-  const lastLabel = resolveLeadLastActivityLabel(lead, periodCalls);
   const canDrag = isDraggablePipelineLead(lead);
 
   return (
@@ -87,7 +84,7 @@ function LeadCard({ lead, periodCalls, onOpen, isDragging, onDragStart, onDragEn
       </div>
     </div>
   );
-}
+});
 
 export default function Pipeline() {
   const navigate = useNavigate();
@@ -104,7 +101,11 @@ export default function Pipeline() {
   const columnRefs = useRef({});
   const dropDepthRef = useRef(0);
   const period = String(searchParams.get("period") || "month").toLowerCase();
+  const deferredPeriod = useDeferredValue(period);
+  const isBoardStale = deferredPeriod !== period;
   const periodLabel = period === "today" ? "Today" : period === "week" ? "This Week" : "This Month";
+  const [groupRev, setGroupRev] = useState(0);
+  const [expandedColumns, setExpandedColumns] = useState({});
 
   const {
     leads: syncedLeads,
@@ -114,34 +115,25 @@ export default function Pipeline() {
     syncing: boardSyncing,
   } = usePipelineSync({
     scope: "admin",
-    period,
+    period: deferredPeriod,
     enabled: true,
     mapLeads: true,
   });
-
-  const {
-    calls: monthCalls,
-    syncing: adminCallsSyncing,
-  } = useAdminSyncedPeriodCalls("month", syncedLeads, true);
 
   useEffect(() => {
     if (!Array.isArray(syncedLeads)) return;
     setLeads(syncedLeads);
   }, [syncedLeads]);
 
-  const periodCalls = useMemo(() => {
-    const source = monthCalls?.length ? monthCalls : dedupePeriodCalls(syncedBoardCalls || []);
-    const scoped = filterCallsForPeriod(source, period);
-    return dedupePeriodCalls(scoped);
-  }, [monthCalls, syncedBoardCalls, period]);
+  const periodCalls = syncedBoardCalls || [];
 
   useEffect(() => {
-    clearPipelineGroupedCache();
-  }, [periodCalls.length, period]);
+    setExpandedColumns({});
+  }, [period]);
 
   const meetings = boardMeetings || [];
   const leadsLoading = boardLoading;
-  const callsSyncing = boardSyncing || adminCallsSyncing;
+  const callsSyncing = boardSyncing;
 
   const handleDragEnter = (stageId) => {
     dropDepthRef.current += 1;
@@ -205,6 +197,8 @@ export default function Pipeline() {
     return list;
   }, [leads, search, selectedService]);
 
+  const deferredFiltered = useDeferredValue(filtered);
+
   const {
     callScopedOnly,
     grouped,
@@ -214,7 +208,7 @@ export default function Pipeline() {
     periodMeetings,
   } = usePipelineBoard({
     leads,
-    period,
+    period: deferredPeriod,
     periodCalls,
     callsLoading: boardLoading,
     callyzerStats: null,
@@ -222,8 +216,14 @@ export default function Pipeline() {
     adminScope: false,
     includeUncontactedAssignments: true,
     scopeCallsByAssignee: true,
-    visibleLeads: filtered,
+    visibleLeads: deferredFiltered,
+    groupRev,
   });
+
+  const activityLabelMap = useMemo(
+    () => buildLeadActivityLabelMap(grouped, periodCalls),
+    [grouped, periodCalls],
+  );
 
   const kanbanLeads = useMemo(() => {
     const seen = new Set();
@@ -301,14 +301,17 @@ export default function Pipeline() {
       stageId === "payment_complete" ? "won" : "note",
     );
     applyLeadUpdate(updated);
-    clearPipelineGroupedCache();
+    setGroupRev((v) => v + 1);
     const dbId = lead._dbId || leadId;
     if (dbId && String(dbId).match(/^\d+$/)) {
       const stageLabel = adminPipelineIdToDbStage(stageId);
       apiPatch(`/api/v1/leads/${dbId}/stage`, { stage: stageLabel, status: stageLabel }, {
         headers: getAdminCrmHeaders(),
       })
-        .then(() => invalidateCache("/api/v1"))
+        .then(() => {
+          invalidateCache("/api/v1");
+          invalidatePipelineBoardCache("admin");
+        })
         .catch(() => {
           apiPatch(`/api/dashboard/pipeline/leads/${dbId}`, { stage: stageId })
             .then(() => invalidateCache("/api/dashboard"))
@@ -439,7 +442,7 @@ export default function Pipeline() {
         </p>
       </GlassCard>
 
-      <GlassCard className="p-3 sm:p-4 overflow-hidden">
+      <GlassCard className={`p-3 sm:p-4 overflow-hidden transition-opacity ${isBoardStale ? "opacity-70" : ""}`}>
         <p className="text-[10px] text-slate-400 mb-2.5 px-0.5">
           <span className="sm:hidden">Each stage is a row · swipe cards horizontally · tap for details</span>
           <span className="hidden sm:inline">Drag cards between columns · tap card for details</span>
@@ -449,6 +452,9 @@ export default function Pipeline() {
         <div className="sm:hidden space-y-4">
           {PIPELINE_STAGES.map((stage) => {
             const columnLeads = grouped[stage.id] || [];
+            const columnExpanded = Boolean(expandedColumns[stage.id]);
+            const visibleLeads = visibleKanbanColumnLeads(columnLeads, columnExpanded);
+            const hiddenCount = hiddenKanbanColumnCount(columnLeads, columnExpanded);
             const isDropTarget = dropStageId === stage.id;
             return (
               <section
@@ -490,17 +496,28 @@ export default function Pipeline() {
                       <p className="text-[11px] text-slate-400">No leads here</p>
                     </div>
                   ) : (
-                    columnLeads.map((lead) => (
+                    <>
+                    {visibleLeads.map((lead) => (
                       <LeadCard
                         key={lead.id}
                         lead={lead}
-                        periodCalls={periodCalls}
+                        lastLabel={activityLabelMap.get(lead.id) ?? "—"}
                         isDragging={String(dragLeadId) === String(lead.id)}
                         onOpen={() => openLeadDetail(lead)}
                         onDragStart={() => setDragLeadId(lead.id)}
                         onDragEnd={() => setDragLeadId(null)}
                       />
-                    ))
+                    ))}
+                    {hiddenCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedColumns((prev) => ({ ...prev, [stage.id]: true }))}
+                        className="shrink-0 w-[min(72vw,200px)] rounded-xl border border-dashed border-rose-200 bg-white/80 px-3 py-2 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 transition"
+                      >
+                        Show {hiddenCount} more
+                      </button>
+                    )}
+                    </>
                   )}
                 </div>
               </section>
@@ -513,6 +530,9 @@ export default function Pipeline() {
           <div className="flex items-start gap-3 min-w-max">
             {PIPELINE_STAGES.map((stage) => {
               const columnLeads = grouped[stage.id] || [];
+              const columnExpanded = Boolean(expandedColumns[stage.id]);
+              const visibleLeads = visibleKanbanColumnLeads(columnLeads, columnExpanded);
+              const hiddenCount = hiddenKanbanColumnCount(columnLeads, columnExpanded);
               const isDropTarget = dropStageId === stage.id;
               return (
                 <div
@@ -555,17 +575,28 @@ export default function Pipeline() {
                         <p className="text-[11px] text-slate-400">Drop leads here</p>
                       </div>
                     ) : (
-                      columnLeads.map((lead) => (
+                      <>
+                      {visibleLeads.map((lead) => (
                         <LeadCard
                           key={lead.id}
                           lead={lead}
-                          periodCalls={periodCalls}
+                          lastLabel={activityLabelMap.get(lead.id) ?? "—"}
                           isDragging={String(dragLeadId) === String(lead.id)}
                           onOpen={() => openLeadDetail(lead)}
                           onDragStart={() => setDragLeadId(lead.id)}
                           onDragEnd={() => setDragLeadId(null)}
                         />
-                      ))
+                      ))}
+                      {hiddenCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedColumns((prev) => ({ ...prev, [stage.id]: true }))}
+                          className="w-full rounded-xl border border-dashed border-rose-200 bg-white/80 px-3 py-2 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 transition"
+                        >
+                          Show {hiddenCount} more
+                        </button>
+                      )}
+                      </>
                     )}
                   </div>
                 </div>

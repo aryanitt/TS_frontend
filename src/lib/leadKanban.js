@@ -122,7 +122,7 @@ function phoneLast10(value) {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
-function buildLeadLookupIndex(leads = []) {
+export function buildLeadLookupIndex(leads = []) {
   const byId = new Map();
   const byPhone = new Map();
   for (const lead of leads) {
@@ -149,7 +149,7 @@ function resolveLeadByPhone(callPhone, index, leads = []) {
   }) || null;
 }
 
-function resolveLeadForCallFromIndex(call, index, leads = []) {
+export function resolveLeadForCallFromIndex(call, index, leads = []) {
   if (!call) return null;
   if (call.leadId != null) {
     const byId = index.byId.get(String(call.leadId));
@@ -419,9 +419,11 @@ export function leadFromOrphanCall(call, col = "lead") {
     startedAt: callAt,
     date: callAt,
     last: lastLabel || "—",
-    source: "Callyzer",
+    source: call.source || "Callyzer",
+    service: call.service || call.requirements || "—",
     _fromCall: true,
     _callId: call.id,
+    _linkedLeadId: call.leadId ?? null,
     _callCol: col,
   };
 }
@@ -467,16 +469,22 @@ export function groupKanbanSyncedWithCallyzer(
   const map = Object.fromEntries(PIPELINE_STAGE_DEFINITIONS.map((s) => [s.id, []]));
   const placed = new Set();
   const kanbanIndex = buildPipelineKanbanIndex(allLeads, periodCalls);
-  const { leadIndex, outboundLeadIds } = kanbanIndex;
+  const { leadIndex, outboundLeadIds, callsByLeadId } = kanbanIndex;
   const scopeCallsByAssignee = options.scopeCallsByAssignee ?? false;
 
-  const getLeadCalls = (lead) => getCallsForLead(lead, periodCalls, {
-    scopeByAssignee: scopeCallsByAssignee,
-  });
-  const getOutboundCalls = (lead) => getLeadOutboundCalls(lead, periodCalls, {
-    outboundOnly: true,
-    scopeByAssignee: scopeCallsByAssignee,
-  });
+  const filterCallsForAssignee = (lead, callList) => {
+    if (!scopeCallsByAssignee || !callList?.length) return callList || [];
+    const assigneeId = resolveLeadAssigneeId(lead);
+    if (assigneeId == null) return callList;
+    return callList.filter((c) => String(c.employeeId) === String(assigneeId));
+  };
+
+  const getLeadCalls = (lead) => {
+    const cached = callsByLeadId.get(String(lead.id));
+    if (cached?.length) return filterCallsForAssignee(lead, cached);
+    return getCallsForLead(lead, periodCalls, { scopeByAssignee: scopeCallsByAssignee });
+  };
+  const getOutboundCalls = (lead) => getLeadCalls(lead).filter(isOutboundCall);
 
   const scopedVisible = visibleLeads ?? filterPipelineLeadsForPeriod(allLeads, periodCalls, periodKey, meetings, kanbanIndex, options);
   const visibleIds = new Set(scopedVisible.map((l) => String(l.id)));
