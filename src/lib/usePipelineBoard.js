@@ -14,7 +14,7 @@ const groupedCache = new Map();
 const GROUPED_CACHE_MAX = 48;
 
 const emptyGrouped = () => Object.fromEntries(
-  ["lead", "not_pick", "conversation_2min", "meeting_booked", "meeting_done", "proposal_sent", "objection", "advance_paid", "payment_complete", "not_interested"].map((id) => [id, []]),
+  ["lead", "not_pick", "short_call", "conversation_2min", "meeting_booked", "meeting_done", "proposal_sent", "objection", "advance_paid", "payment_complete", "not_interested"].map((id) => [id, []]),
 );
 
 export function clearPipelineGroupedCache() {
@@ -177,7 +177,9 @@ export function usePipelineBoard({
   const syncedNotPickupCalls = hasCalls
     ? (callMetrics.notPickupByClient || 0)
     : ((Number.isFinite(statsNotPick) && statsNotPick > 0) ? statsNotPick : (callMetrics.notPickupByClient || 0));
+  const syncedShortCalls = hasCalls ? (callMetrics.shortCalls || 0) : 0;
   const syncedConversationLeads = grouped.conversation_2min?.length ?? callMetrics.conversationLeads ?? 0;
+  const syncedShortCallLeads = grouped.short_call?.length ?? callMetrics.shortCallLeads ?? 0;
   const syncedNotPickupLeads = grouped.not_pick?.length ?? callMetrics.notPickupLeads ?? 0;
 
   return {
@@ -191,6 +193,8 @@ export function usePipelineBoard({
     stageDisplayCounts,
     syncedConversationCalls,
     syncedConversationLeads,
+    syncedShortCalls,
+    syncedShortCallLeads,
     syncedNotPickupCalls,
     syncedNotPickupLeads,
     grouping,

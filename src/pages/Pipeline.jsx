@@ -20,7 +20,7 @@ import { useAdmin } from "../context/AdminContext.jsx";
 import { adminPipelineIdToDbStage } from "../lib/leadSync.js";
 import useIsMobile from "../lib/useIsMobile.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../lib/segmentPills.js";
-import { CALL_CONVERSATION_LABEL } from "../lib/callMetrics.js";
+import { CALL_CONVERSATION_LABEL, CALL_SHORT_LABEL } from "../lib/callMetrics.js";
 import { usePipelineBoard, visibleKanbanColumnLeads, hiddenKanbanColumnCount } from "../lib/usePipelineBoard.js";
 import { usePipelineSync, invalidatePipelineBoardCache } from "../lib/usePipelineSync.js";
 import { resolveLeadKanbanColumn, getPipelineStagePillCount } from "../lib/leadKanban.js";
@@ -204,6 +204,7 @@ export default function Pipeline() {
     grouped,
     stageDisplayCounts,
     syncedConversationCalls,
+    syncedShortCalls,
     syncedNotPickupCalls,
     periodMeetings,
   } = usePipelineBoard({
@@ -412,6 +413,8 @@ export default function Pipeline() {
             let callHint = null;
             if (stage.id === "conversation_2min") {
               callHint = `${syncedConversationCalls} calls ${CALL_CONVERSATION_LABEL} · ${columnLeads.length} leads with 2 min+`;
+            } else if (stage.id === "short_call") {
+              callHint = `${syncedShortCalls} connected calls ${CALL_SHORT_LABEL} · ${columnLeads.length} leads in Short Call`;
             } else if (stage.id === "not_pick") {
               callHint = `${syncedNotPickupCalls} client no pickup · ${columnLeads.length} leads in Not Pick`;
             } else if (stage.id === "meeting_booked") {
@@ -437,7 +440,7 @@ export default function Pipeline() {
           })}
         </div>
         <p className="text-[10px] text-slate-400 px-0.5">
-          {periodLabel} · Callyzer synced · {syncedConversationCalls} calls {CALL_CONVERSATION_LABEL} ({grouped.conversation_2min?.length || 0} leads) · {syncedNotPickupCalls} client no pickup ({grouped.not_pick?.length || 0} leads) · {periodMeetings.length} meetings
+          {periodLabel} · Callyzer synced · {syncedShortCalls} short calls {CALL_SHORT_LABEL} ({grouped.short_call?.length || 0} leads) · {syncedConversationCalls} calls {CALL_CONVERSATION_LABEL} ({grouped.conversation_2min?.length || 0} leads) · {syncedNotPickupCalls} client no pickup ({grouped.not_pick?.length || 0} leads) · {periodMeetings.length} meetings
           {(callsSyncing) ? " · syncing in background…" : ""}
         </p>
       </GlassCard>
