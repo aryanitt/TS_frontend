@@ -260,6 +260,20 @@ export function apiEmployeeToAdmin(emp) {
   };
 }
 
+/** Active employees only — excludes inactive/demo rows not shown on Team page. */
+export function filterAssignableEmployees(employees = []) {
+  const seen = new Set();
+  return (Array.isArray(employees) ? employees : []).filter((emp) => {
+    if (!emp?.id) return false;
+    const status = String(emp.status || "active").trim().toLowerCase();
+    if (status === "inactive") return false;
+    const key = String(emp.id);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Fetch all leads from paginated /api/v1/leads (admin lists were capped at 200). */
 export async function fetchAllLeads(apiGetFn, { headers, pageSize = 500, maxPages = 40, extraQuery = {}, skipCache = true, cacheTtl = skipCache ? 0 : 60_000 } = {}) {
   const all = [];

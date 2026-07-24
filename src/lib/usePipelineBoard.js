@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   groupEmpLeadsKanban,
   filterPipelineLeadsForPeriod,
@@ -181,6 +181,48 @@ export function usePipelineBoard({
   const syncedConversationLeads = grouped.conversation_2min?.length ?? callMetrics.conversationLeads ?? 0;
   const syncedShortCallLeads = grouped.short_call?.length ?? callMetrics.shortCallLeads ?? 0;
   const syncedNotPickupLeads = grouped.not_pick?.length ?? callMetrics.notPickupLeads ?? 0;
+  const moveLeadLocally = useCallback((leadId, targetStageId) => {
+    const id = String(leadId);
+    setBoardState((prev) => {
+      const nextGrouped = { ...prev.grouped };
+      let foundLead = null;
+      
+      for (const col of Object.keys(nextGrouped)) {
+        if (Array.isArray(nextGrouped[col])) {
+          nextGrouped[col] = nextGrouped[col].filter((l) => {
+            const isMatch = String(l.id) === id || String(l._dbId) === id;
+            if (isMatch) foundLead = l;
+            return !isMatch;
+          });
+        }
+      }
+      
+      if (foundLead) {
+        const updatedLead = {
+          ...foundLead,
+          stage: targetStageId,
+          pipelineStage: targetStageId,
+          updatedAt: new Date().toISOString(),
+        };
+        nextGrouped[targetStageId] = [...(nextGrouped[targetStageId] || []), updatedLead];
+        
+        const hit = groupedCache.get(cacheKey);
+        if (hit) {
+          groupedCache.set(cacheKey, {
+            ...hit,
+            grouped: nextGrouped,
+          });
+        }
+        
+        return {
+          ...prev,
+          grouped: nextGrouped,
+        };
+      }
+      
+      return prev;
+    });
+  }, [cacheKey]);
 
   return {
     callScopedOnly,
@@ -199,6 +241,7 @@ export function usePipelineBoard({
     syncedNotPickupLeads,
     grouping,
     callsLoading,
+    moveLeadLocally,
   };
 }
 

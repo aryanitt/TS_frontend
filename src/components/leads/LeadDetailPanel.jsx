@@ -115,13 +115,12 @@ export default function LeadDetailPanel({
   const crmHeaders = variant === "admin" ? getAdminCrmHeaders() : getCrmHeaders();
 
   useEffect(() => {
-    if (viewOnlyPipeline || !readOnly || !liveLead?.id) return undefined;
-    if (calls?.length) {
-      setFetchedCalls([]);
-      return undefined;
-    }
-    let cancelled = false;
+    // Always fetch calls from the API for the specific lead so Callyzer
+    // recordings are visible regardless of the currently selected period filter.
+    if (viewOnlyPipeline || !liveLead?.id) return undefined;
     const leadDbId = liveLead._dbId || liveLead.id;
+    if (!leadDbId || !/^\d+$/.test(String(leadDbId))) return undefined;
+    let cancelled = false;
     (async () => {
       setCallsLoading(true);
       try {
@@ -139,12 +138,19 @@ export default function LeadDetailPanel({
       }
     })();
     return () => { cancelled = true; };
-  }, [readOnly, liveLead, calls?.length, crmHeaders, viewOnlyPipeline]);
+  }, [liveLead?.id, crmHeaders, viewOnlyPipeline]);
 
-  const resolvedCalls = useMemo(
-    () => (calls?.length ? calls : fetchedCalls),
-    [calls, fetchedCalls],
-  );
+  // Merge API-fetched calls with in-memory period calls, deduped by id.
+  // This ensures Callyzer recordings outside the current period filter still appear.
+  const resolvedCalls = useMemo(() => {
+    const inMem = Array.isArray(calls) ? calls : [];
+    const fetched = Array.isArray(fetchedCalls) ? fetchedCalls : [];
+    if (!fetched.length) return inMem;
+    if (!inMem.length) return fetched;
+    const seen = new Set(fetched.map((c) => String(c.id || c._id || "")));
+    const extras = inMem.filter((c) => !seen.has(String(c.id || c._id || "")));
+    return [...fetched, ...extras];
+  }, [calls, fetchedCalls]);
 
   const leadCalls = useMemo(() => {
     const matched = resolvedCalls.filter((c) => {
@@ -602,7 +608,7 @@ Lead Notes & Comments
                     {c.note && (
                       <p className="text-[10px] text-slate-600 mt-1.5 leading-relaxed whitespace-pre-line">{c.note}</p>
                     )}
-                    {!readOnly && c.note && (
+                    {!readOnly && (
                       <p className="text-[9.5px] text-rose-800 font-bold mt-1.5 flex items-center gap-1">
                         <Sparkles className="w-3.5 h-3.5 text-rose-600 animate-pulse" /> View AI MoM & SOP Checklist
                       </p>

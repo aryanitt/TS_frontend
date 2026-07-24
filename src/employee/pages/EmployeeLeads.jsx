@@ -11,11 +11,8 @@ import {
   formatEmpPipelineValue,
   getEmpPipelineSummary,
   getEmpStageMeta,
-  isAdminPanelAssignedLead,
-  isLeadAssignedInPeriod,
 } from "../../data/employeeMock.js";
-import { leadHasOutboundCalls } from "../../lib/leadKanban.js";
-import { resolveLeadKanbanColumn, getPipelineStagePillCount } from "../../lib/leadKanban.js";
+import { leadHasOutboundCalls, resolveLeadKanbanColumn, getPipelineStagePillCount, isAdminPanelAssignedLead, isLeadAssignedInPeriod } from "../../lib/leadKanban.js";
 import { buildLeadActivityLabelMap } from "../../lib/callDisplay.js";
 import { CALL_CONVERSATION_LABEL, CALL_SHORT_LABEL } from "../../lib/callMetrics.js";
 import { usePipelineBoard, visibleKanbanColumnLeads, hiddenKanbanColumnCount } from "../../lib/usePipelineBoard.js";
@@ -273,6 +270,7 @@ export default function EmployeeLeads() {
     syncedShortCalls,
     syncedNotPickupCalls,
     periodMeetings,
+    moveLeadLocally,
   } = usePipelineBoard({
     leads,
     period: deferredPeriod,
@@ -349,7 +347,9 @@ export default function EmployeeLeads() {
       return;
     }
     updateLeadStage(lead.id, target.label, { fromNewAssigned: isPipelineNewAssigned(lead) });
-    setGroupRev((v) => v + 1);
+    if (moveLeadLocally) {
+      moveLeadLocally(lead.id, stageId);
+    }
     if (scroll) scrollToStage(stageId);
     toast.success(
       isPipelineNewAssigned(lead)

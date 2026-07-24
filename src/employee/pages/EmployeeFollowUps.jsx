@@ -580,18 +580,20 @@ export default function EmployeeFollowUps() {
 
       <GlassCard className="p-2.5 sm:p-4">
         <div className="flex flex-col gap-2 sm:gap-3">
-          {/* Mobile: 4 equal filter pills in one row */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-0.5 p-0.5 rounded-lg bg-slate-100/80 border border-slate-200/80 sm:hidden">
+          {/* Mobile: 6 equal filter pills in grid of 3 columns */}
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100/70 border border-slate-200/50 sm:hidden">
             {FILTERS.map(({ id, short, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setFilter(id)}
-                className={`flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-md text-[9px] font-bold transition ${SEGMENT_BTN} ${
-                  filter === id ? SEGMENT_BTN_ACTIVE : SEGMENT_BTN_INACTIVE
+                className={`flex flex-col items-center justify-center gap-0.5 py-1 rounded-lg text-[9px] font-extrabold transition-all border shrink-0 ${
+                  filter === id
+                    ? "border-rose-600 bg-gradient-to-r from-red-600 via-rose-500 to-pink-500 text-white shadow-sm"
+                    : "border-slate-200/60 bg-white text-slate-750 hover:text-rose-600"
                 }`}
               >
-                <Icon className="w-3 h-3" />
+                <Icon className="w-3.5 h-3.5" />
                 {short}
               </button>
             ))}

@@ -13,7 +13,7 @@ import LeadDetailDrawer from "../components/leads/LeadDetailDrawer.jsx";
 import { GlassCard, StatCard, Badge, Drawer, SectionHeader } from "../components/Primitives.jsx";
 import { apiGet, apiPost, apiPut, apiPatch, readCachedJson, invalidateCache } from "../lib/api.js";
 import { getAdminCrmHeaders } from "../lib/crmContext.js";
-import { apiLeadToAdmin, apiEmployeeToAdmin, fetchLeadsForAssignPage, unwrapApiData } from "../lib/leadSync.js";
+import { apiLeadToAdmin, apiEmployeeToAdmin, filterAssignableEmployees, fetchLeadsForAssignPage, unwrapApiData } from "../lib/leadSync.js";
 import {
   getAssignmentState, assignLead, bulkAssign,
   toggleEmployeeReceiving, setDistributionMode, setAutoAssign,
@@ -47,7 +47,12 @@ const cardBase = {
 /** Right panel: visible employee cards before scroll. */
 const VISIBLE_EMPLOYEE_COUNT = 2;
 const EMPLOYEE_CARD_HEIGHT_PX = 190;
-const EMPLOYEE_LIST_VIEWPORT_PX = VISIBLE_EMPLOYEE_COUNT * EMPLOYEE_CARD_HEIGHT_PX + (VISIBLE_EMPLOYEE_COUNT - 1) * 10;
+
+function employeeListViewportPx(count) {
+  if (!count) return 0;
+  const visible = Math.min(count, VISIBLE_EMPLOYEE_COUNT);
+  return visible * EMPLOYEE_CARD_HEIGHT_PX + Math.max(0, visible - 1) * 10;
+}
 
 function getLeadPhone(lead) {
   return lead.phone || lead.phone_number || "—";
@@ -178,11 +183,11 @@ const showToast = (message, type = "success") => {
       fetchLeadsForAssignPage(apiGet, { headers: getAdminCrmHeaders() })
         .then((items) => ({ success: true, leads: items.map(apiLeadToAdmin), fromV1: true }))
         .catch(() => ({ success: false, leads: [] })),
-      apiGet("/api/v1/employees", { headers: getAdminCrmHeaders(), cacheTtl: 120_000 })
+      apiGet("/api/v1/employees?status=active", { headers: getAdminCrmHeaders(), cacheTtl: 120_000 })
         .then((res) => {
           const items = unwrapApiData(res);
           if (items.length) {
-            return { success: true, employees: items.map(apiEmployeeToAdmin) };
+            return { success: true, employees: filterAssignableEmployees(items.map(apiEmployeeToAdmin)) };
           }
           throw new Error("empty");
         })
@@ -192,14 +197,16 @@ const showToast = (message, type = "success") => {
               if (res?.success && Array.isArray(res.employees) && res.employees.length) {
                 return {
                   success: true,
-                  employees: res.employees.map((e) => ({
-                    id: e.id,
-                    name: e.name,
-                    email: e.email,
-                    role: e.role,
-                    department: e.department,
-                    status: e.status || "active",
-                  })),
+                  employees: filterAssignableEmployees(
+                    res.employees.map((e) => ({
+                      id: e.id,
+                      name: e.name,
+                      email: e.email,
+                      role: e.role,
+                      department: e.department,
+                      status: e.status || "active",
+                    })),
+                  ),
                 };
               }
               return { success: true, employees: [] };
@@ -209,7 +216,7 @@ const showToast = (message, type = "success") => {
     ])
       .then(([leadData, empData]) => {
         const leadList = leadData.success ? leadData.leads : [];
-        const empList = empData.employees || [];
+        const empList = filterAssignableEmployees(empData.employees || []);
 
         setLeads(leadList);
         setEmployees(empList);
@@ -312,7 +319,7 @@ const showToast = (message, type = "success") => {
 
   const workload = useMemo(
     () => computeWorkload(employees, assignState.assignments, leads),
-    [leads, assignState.assignments],
+    [employees, leads, assignState.assignments],
   );
 
   const enrichedLeads = useMemo(
@@ -846,16 +853,19 @@ const showToast = (message, type = "success") => {
           </div>
 
         {/* Employee workload panel */}
-        <div className="flex flex-col h-full min-h-0 min-w-0">
-          <div style={cardBase} className="flex flex-col flex-1 overflow-hidden h-full min-w-0">
+        <div className="flex flex-col min-h-0 min-w-0 self-start w-full">
+          <div style={cardBase} className="flex flex-col overflow-hidden min-w-0">
             <div className="px-3 sm:px-4 py-2.5 border-b border-rose-50 shrink-0">
               <p className="text-xs font-bold text-slate-900">Employee Workload</p>
               <p className="text-[10px] text-slate-500">Drop leads here to assign</p>
             </div>
-            <div className="flex flex-col flex-1 min-h-0">
+            <div className="flex flex-col">
               <div
                 className="overflow-y-auto overflow-x-hidden px-3 pt-3 pb-2 space-y-2 shrink-0 scrollbar-thin"
-                style={{ height: EMPLOYEE_LIST_VIEWPORT_PX, maxHeight: EMPLOYEE_LIST_VIEWPORT_PX }}
+                style={{
+                  height: employeeListViewportPx(employees.length),
+                  maxHeight: employeeListViewportPx(employees.length),
+                }}
               >
             {employees.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-8">No team members loaded</p>
@@ -887,7 +897,6 @@ const showToast = (message, type = "success") => {
                   Scroll for {employees.length - VISIBLE_EMPLOYEE_COUNT} more team member{employees.length - VISIBLE_EMPLOYEE_COUNT === 1 ? "" : "s"}
                 </p>
               )}
-              <div className="flex-1 min-h-0" aria-hidden />
             </div>
           </div>
         </div>
