@@ -29,7 +29,7 @@ export default function TSPublicationDoodleLogo({
     <div
       className={`relative shrink-0 overflow-hidden ${
         showBackground
-          ? "bg-[#3d3b3b] shadow-[0_2px_12px_rgba(0,0,0,0.4)] ring-1 ring-white/10"
+          ? "bg-white shadow-[0_2px_12px_rgba(0,0,0,0.1)] ring-1 ring-black/5"
           : ""
       } ${radius} ${className}`}
       style={{ width: size, height: size }}
