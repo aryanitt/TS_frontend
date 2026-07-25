@@ -11,6 +11,7 @@ import { EMP_APP_TODAY, isFollowUpCompleted, isTodayUncontactedNewLead, isStaleU
 import { dedupePeriodCalls, phonesMatchLoose } from "../../lib/callMetrics.js";
 import { formatIndianPhone } from "../../lib/indianFormat.js";
 import { formatRelativeTime } from "../../lib/leadSync.js";
+import { formatTelUrl } from "../../lib/phoneUtils.js";
 import { SEGMENT_WRAP, SEGMENT_BTN, SEGMENT_BTN_ACTIVE, SEGMENT_BTN_INACTIVE } from "../../lib/segmentPills.js";
 import {
   EmpEmptyState, EmpModal, BtnPrimary, BtnSecondary, BtnGhost,
@@ -142,7 +143,8 @@ function NewLeadCard({ lead, onLiveCall, onWhatsApp }) {
               toast.error("Phone number not found for this lead");
               return;
             }
-            window.location.href = `tel:${phone}`;
+            const telUrl = formatTelUrl(phone);
+            if (telUrl) window.location.href = telUrl;
           }}
           className="inline-flex items-center justify-center gap-0.5 py-1 px-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold border border-rose-200 bg-white text-rose-800 hover:bg-rose-50 transition active:scale-95 shadow-sm"
         >
@@ -271,7 +273,8 @@ function FollowUpCard({ item, onCall, onWhatsApp, leads = [] }) {
               toast.error("Phone number not found for this lead");
               return;
             }
-            window.location.href = `tel:${phone}`;
+            const telUrl = formatTelUrl(phone);
+            if (telUrl) window.location.href = telUrl;
           }}
           className="inline-flex items-center justify-center gap-0.5 py-1 px-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold border border-rose-200 bg-white text-rose-800 hover:bg-rose-50 transition active:scale-95 shadow-sm"
         >

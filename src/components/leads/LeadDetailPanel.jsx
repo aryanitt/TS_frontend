@@ -16,6 +16,7 @@ import CashCollectedPanel from "../CashCollectedPanel.jsx";
 import { CANONICAL_STAGE_LABELS, buildDetailDraft, unwrapApiList } from "../../lib/leadSync.js";
 import { callFromApiLite } from "../../lib/callFromApiLite.js";
 import { formatCallDisplayDate, formatCallDuration, isCallConnected } from "../../lib/callDisplay.js";
+import { formatTelUrl } from "../../lib/phoneUtils.js";
 import { apiGet, apiPost } from "../../lib/api.js";
 import { getCrmHeaders, getAdminCrmHeaders } from "../../lib/crmContext.js";
 
@@ -498,7 +499,8 @@ export default function LeadDetailPanel({
                 toast.error("Phone number not found for this lead");
                 return;
               }
-              window.location.href = `tel:${liveLead.phone}`;
+              const telUrl = formatTelUrl(liveLead.phone);
+              if (telUrl) window.location.href = telUrl;
             }}
             className="flex-1 h-10 rounded-xl border border-rose-250 bg-white text-rose-800 hover:bg-rose-50/50 text-xs font-bold transition flex items-center justify-center gap-1.5"
           >
