@@ -236,6 +236,7 @@ export function apiLeadToAdmin(lead) {
     assignee_name: employeeName,
     employeeName,
     assignment_status: lead.assignmentStatus || lead.assignment_status,
+    is_bulk_uploaded: lead.sourceMeta?.integration === "bulk_upload" || lead.source_meta?.integration === "bulk_upload" || false,
   };
 }
 

@@ -6,9 +6,10 @@ import {
   Users, Plus, Search, CheckCircle2, X,
   Target, Flame, Pause, Play, PhoneCall,
   GripVertical, ChevronDown, ChevronUp, History, Layers,
-  Shuffle, Zap,
+  Shuffle, Zap, Upload, FileSpreadsheet,
   } from "lucide-react";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
+import UploadLeadsDrawer from "../components/leads/UploadLeadsDrawer.jsx";
 import LeadDetailDrawer from "../components/leads/LeadDetailDrawer.jsx";
 import { GlassCard, StatCard, Badge, Drawer, SectionHeader } from "../components/Primitives.jsx";
 import { apiGet, apiPost, apiPut, apiPatch, readCachedJson, invalidateCache } from "../lib/api.js";
@@ -150,7 +151,9 @@ export default function Leads() {
   const [employees, setEmployees] = useState([]);
   const [assignState, setAssignState] = useState(() => getAssignmentState());
   const [loading, setLoading] = useState(() => leads.length === 0);
-const [addOpen, setAddOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [showSheetLeadsOnly, setShowSheetLeadsOnly] = useState(false);
   const [detailLead, setDetailLead] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -178,12 +181,13 @@ const showToast = (message, type = "success") => {
     return () => window.clearTimeout(id);
   }, [searchInput]);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
+    setLoading(true);
     Promise.all([
-      fetchLeadsForAssignPage(apiGet, { headers: getAdminCrmHeaders() })
+      fetchLeadsForAssignPage(apiGet, { headers: getAdminCrmHeaders(), skipCache: true })
         .then((items) => ({ success: true, leads: items.map(apiLeadToAdmin), fromV1: true }))
         .catch(() => ({ success: false, leads: [] })),
-      apiGet("/api/v1/employees?status=active", { headers: getAdminCrmHeaders(), cacheTtl: 120_000 })
+      apiGet("/api/v1/employees?status=active", { headers: getAdminCrmHeaders(), skipCache: true })
         .then((res) => {
           const items = unwrapApiData(res);
           if (items.length) {
@@ -192,7 +196,7 @@ const showToast = (message, type = "success") => {
           throw new Error("empty");
         })
         .catch(() =>
-          apiGet("/api/team/employees", { cacheTtl: 120_000 })
+          apiGet("/api/team/employees", { skipCache: true })
             .then((res) => {
               if (res?.success && Array.isArray(res.employees) && res.employees.length) {
                 return {
@@ -236,8 +240,12 @@ const showToast = (message, type = "success") => {
         setLeads([]);
         setEmployees([]);
       })
-    .finally(() => setLoading(false));
-}, []);
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     const leadId = searchParams.get("leadId");
@@ -354,6 +362,7 @@ const showToast = (message, type = "success") => {
     const q = search.toLowerCase().trim();
     return queueLeads
       .filter((l) => {
+        if (showSheetLeadsOnly && !l.is_bulk_uploaded) return false;
         if (!q) return true;
         return [l.lead_name, l.phone, l.phone_number, getLeadService(l)]
           .some((f) => String(f || "").toLowerCase().includes(q));
@@ -365,7 +374,7 @@ const showToast = (message, type = "success") => {
           ? String(va).localeCompare(String(vb))
           : String(vb).localeCompare(String(va));
       });
-  }, [queueLeads, search, sortKey, sortDir]);
+  }, [queueLeads, search, sortKey, sortDir, showSheetLeadsOnly]);
 
   const handleAssign = useCallback(
     async (lead, employee, method = "manual") => {
@@ -577,6 +586,13 @@ const showToast = (message, type = "success") => {
             </button>
             <button
               type="button"
+              onClick={() => setUploadOpen(true)}
+              className={`${PERIOD_PILL_BTN} ${PERIOD_PILL_INACTIVE} inline-flex items-center gap-1`}
+            >
+              <Upload size={12} /> Upload Sheet
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 if (selected.size === 0) {
                   showToast("Select leads in the queue, choose a mode, then Run Now", "error");
@@ -713,31 +729,42 @@ const showToast = (message, type = "success") => {
         <div className="xl:col-span-2 flex flex-col h-full min-h-0 min-w-0">
           <div style={cardBase} className="overflow-hidden flex flex-col flex-1 h-full min-w-0">
             <div className="px-3 sm:px-4 py-2.5 border-b border-rose-50">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 {/* Search + filters */}
-                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
-                  <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-[280px]">
+                <div className="flex flex-row items-center gap-2 shrink-0">
+                  <div className="relative w-[180px] sm:w-[220px]">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-rose-300 pointer-events-none" />
                     <input
                       value={searchInput}
                       onChange={(e) => setSearchInput(e.target.value)}
-                      placeholder="Search name, phone, service…"
+                      placeholder="Search queue…"
                       className="w-full h-8 pl-8 pr-2.5 rounded-lg border border-rose-100 text-xs text-slate-900 placeholder:text-slate-400 outline-none focus:border-rose-400 bg-white"
                     />
                   </div>
-                  <p className="text-[10px] text-slate-400 font-medium px-0.5">
-                    Unassigned · N8N & manual only
-                  </p>
-          </div>
+                  <span className="inline-flex items-center h-5 px-2 rounded-full text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-100/50 whitespace-nowrap">
+                    {showSheetLeadsOnly ? "Sheet Uploads" : "N8N & Manual"}
+                  </span>
+                </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1.5 shrink-0 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => setHistoryOpen(true)}
                     className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 h-8 px-2.5 rounded-lg border border-rose-200 text-rose-700 text-[10px] sm:text-[11px] font-bold hover:bg-rose-50 transition whitespace-nowrap"
                   >
                     <History size={12} /> Audit Log
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSheetLeadsOnly(!showSheetLeadsOnly)}
+                    className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 h-8 px-2.5 rounded-lg border text-[10px] sm:text-[11px] font-bold transition whitespace-nowrap ${
+                      showSheetLeadsOnly
+                        ? "bg-rose-600 border-rose-600 text-white shadow-glow hover:opacity-95"
+                        : "border-rose-200 text-rose-700 hover:bg-rose-50"
+                    }`}
+                  >
+                    <FileSpreadsheet size={12} /> {showSheetLeadsOnly ? "Showing Sheet" : "Sheet Only"}
                   </button>
                   {selected.size > 0 && (
                     <button
@@ -905,6 +932,8 @@ const showToast = (message, type = "success") => {
 
 
       <AddLeadDrawer open={addOpen} onClose={handleAddClose} showToast={showToast} />
+
+      <UploadLeadsDrawer open={uploadOpen} onClose={() => setUploadOpen(false)} showToast={showToast} onUploadSuccess={loadData} />
 
       <LeadDetailDrawer
         open={!!detailLead}
