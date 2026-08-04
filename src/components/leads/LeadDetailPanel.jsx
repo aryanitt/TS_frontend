@@ -94,6 +94,7 @@ export default function LeadDetailPanel({
   addActivityRecord,
   startCallyzerCall,
   onTemperatureChange,
+  onStageChange,
   pipelineView = false,
   editLeadsHref = null,
 }) {
@@ -111,9 +112,12 @@ export default function LeadDetailPanel({
 
   useEffect(() => {
     setDraft(buildDetailDraft(liveLead));
-  }, [liveLead?.id, liveLead?.updatedAt, liveLead?.stage]);
+  }, [liveLead?.id]);
 
-  const crmHeaders = variant === "admin" ? getAdminCrmHeaders() : getCrmHeaders();
+  const crmHeaders = useMemo(
+    () => (variant === "admin" ? getAdminCrmHeaders() : getCrmHeaders()),
+    [variant],
+  );
 
   useEffect(() => {
     // Always fetch calls from the API for the specific lead so Callyzer
@@ -392,7 +396,12 @@ export default function LeadDetailPanel({
         <DetailField
           label="Stage"
           value={draft.stage}
-          onChange={patchDraft("stage")}
+          onChange={(val) => {
+            patchDraft("stage")(val);
+            if (onStageChange) {
+              onStageChange(val);
+            }
+          }}
           options={CANONICAL_STAGE_LABELS}
           readOnly={readOnly}
         />

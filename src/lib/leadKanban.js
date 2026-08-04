@@ -316,13 +316,14 @@ export function resolveLeadKanbanColumn(lead, calls = [], options = {}) {
   if (lead._fromCall && lead._callCol) return lead._callCol;
 
   const dbStageId = mapStageToId(lead.pipelineStage || lead.stage, lead.status);
-  if (ADVANCED_KANBAN_STAGES.has(dbStageId)) return dbStageId;
-  if (dbStageId === "meeting_booked" || dbStageId === "meeting_done") return dbStageId;
+  if (lead.stageOverride || (dbStageId && dbStageId !== "lead")) return dbStageId;
 
-  return resolveEarlyFunnelColumn(lead, calls, {
-    outboundOnly: true,
-    scopeByAssignee: options.scopeByAssignee ?? false,
-  }) || "lead";
+  return (
+    resolveEarlyFunnelColumn(lead, calls, {
+      outboundOnly: true,
+      scopeByAssignee: options.scopeByAssignee ?? false,
+    }) || dbStageId || "lead"
+  );
 }
 
 /** Only leads visible in pipeline: Callyzer call activity, meetings, or uncontacted new assignment. */
@@ -542,12 +543,13 @@ export function groupKanbanSyncedWithCallyzer(
 
   placeMeetingsOnKanban(map, placed, allLeads, meetings, periodKey, showLead);
 
-  // Rep-set pipeline stages (Meeting Booked, Proposal, etc.) win over Callyzer auto-routing.
+  // Rep-set or manually overridden pipeline stages win over Callyzer auto-routing.
   for (const lead of scopedVisible) {
     if (!showLead(lead)) continue;
     const dbStageId = mapStageToId(lead.pipelineStage || lead.stage, lead.status);
-    if (!ADVANCED_KANBAN_STAGES.has(dbStageId)) continue;
-    pushLead(dbStageId, lead);
+    if (lead.stageOverride || (dbStageId && dbStageId !== "lead")) {
+      pushLead(dbStageId, lead);
+    }
   }
 
   // Lead-centric: best early-funnel column from calls for leads not manually staged.
