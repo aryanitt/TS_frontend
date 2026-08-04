@@ -1227,13 +1227,20 @@ export function EmployeeProvider({ children }) {
         invalidateCache("/api/v1/employee/");
         invalidateCache(`/api/v1/leads/${leadId}`);
       } catch (err) {
-        if (prevSnapshot) {
-          setLeads((prev) => prev.map((l) => (
-            String(l.id) === String(leadId) ? prevSnapshot : l
-          )));
+        // If only the stage changed (optimistic board move already applied), don't
+        // show an error toast or revert — the card is already in the right column.
+        const isStageOnlyUpdate = stageUpdate && Object.keys(payload).length === 0;
+        if (!isStageOnlyUpdate) {
+          if (prevSnapshot) {
+            setLeads((prev) => prev.map((l) => (
+              String(l.id) === String(leadId) ? prevSnapshot : l
+            )));
+          }
+          toast.error(err.message || "Lead details update failed");
+          throw err;
         }
-        toast.error(err.message || "Lead details update failed");
-        throw err;
+        // Stage-only fail: silently retain the optimistic local state
+        console.warn("[editLeadDetails] stage patch failed (optimistic kept):", err?.message);
       }
     }
   }, [usingApi, leads]);
