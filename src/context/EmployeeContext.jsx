@@ -63,6 +63,7 @@ import {
 } from "../lib/leadSync.js";
 import { invalidateCallyzerStatsCache, CALLYZER_POLL_INTERVAL_MS, dispatchCallyzerRefresh } from "../lib/useCallyzerStats.js";
 import { onLeadChanged, onDashboardRefresh, markLocalLeadChange } from "../lib/realtime.js";
+import { invalidatePipelineBoardCache } from "../lib/usePipelineSync.js";
 
 const EmployeeContext = createContext(null);
 
@@ -1031,6 +1032,9 @@ export function EmployeeProvider({ children }) {
         }, { headers: getCrmHeaders() });
         invalidateCache("/api/v1/employee/");
         invalidateCache(`/api/v1/leads/${leadId}`);
+        // usePipelineSync keeps its own module-level board cache that invalidateCache
+        // does not touch — without this the board keeps serving the pre-move payload.
+        invalidatePipelineBoardCache();
       } catch (err) {
         if (prevSnapshot) {
           setLeads((prev) => prev.map((l) => (String(l.id) === String(leadId) ? prevSnapshot : l)));
@@ -1226,21 +1230,15 @@ export function EmployeeProvider({ children }) {
         }
         invalidateCache("/api/v1/employee/");
         invalidateCache(`/api/v1/leads/${leadId}`);
+        if (stageUpdate) invalidatePipelineBoardCache();
       } catch (err) {
-        // If only the stage changed (optimistic board move already applied), don't
-        // show an error toast or revert — the card is already in the right column.
-        const isStageOnlyUpdate = stageUpdate && Object.keys(payload).length === 0;
-        if (!isStageOnlyUpdate) {
-          if (prevSnapshot) {
-            setLeads((prev) => prev.map((l) => (
-              String(l.id) === String(leadId) ? prevSnapshot : l
-            )));
-          }
-          toast.error(err.message || "Lead details update failed");
-          throw err;
+        if (prevSnapshot) {
+          setLeads((prev) => prev.map((l) => (
+            String(l.id) === String(leadId) ? prevSnapshot : l
+          )));
         }
-        // Stage-only fail: silently retain the optimistic local state
-        console.warn("[editLeadDetails] stage patch failed (optimistic kept):", err?.message);
+        toast.error(err.message || "Lead details update failed");
+        throw err;
       }
     }
   }, [usingApi, leads]);

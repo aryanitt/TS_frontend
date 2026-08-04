@@ -313,7 +313,7 @@ export default function Pipeline() {
     applyLeadUpdate(updated);
   };
 
-  const moveLeadToStage = (leadId, stageId, { scroll = true } = {}) => {
+  const moveLeadToStage = async (leadId, stageId, { scroll = true } = {}) => {
     const id = String(leadId);
     let lead = leads.find((l) => String(l.id) === id || String(l._dbId) === id);
     if (!lead) {
@@ -341,6 +341,7 @@ export default function Pipeline() {
       return;
     }
     const target = getStageMeta(stageId);
+    const prevSnapshot = lead;
     const updated = patchLead(
       lead,
       { stage: stageId, pipelineStage: stageId, stageOverride: true },
@@ -351,27 +352,36 @@ export default function Pipeline() {
     if (moveLeadLocally) {
       moveLeadLocally(leadId, stageId);
     }
-    const dbId = lead._dbId || leadId;
-    if (dbId && String(dbId).match(/^\d+$/)) {
-      const stageLabel = adminPipelineIdToDbStage(stageId);
-      apiPatch(`/api/v1/leads/${dbId}/stage`, { stage: stageLabel, status: stageLabel }, {
-        headers: getAdminCrmHeaders(),
-      })
-        .then(() => {
-          invalidateCache("/api/v1");
-          invalidatePipelineBoardCache("admin");
-        })
-        .catch(() => {
-          apiPatch(`/api/dashboard/pipeline/leads/${dbId}`, { stage: stageId })
-            .then(() => {
-              invalidateCache("/api/dashboard");
-              invalidatePipelineBoardCache("admin");
-            })
-            .catch(() => {});
-        });
-    }
     if (scroll) scrollToStage(stageId);
-    toast.success(`Moved to ${target.label}`);
+
+    const dbId = lead._dbId || leadId;
+    if (!dbId || !String(dbId).match(/^\d+$/)) {
+      toast.success(`Moved to ${target.label}`);
+      return;
+    }
+
+    const stageLabel = adminPipelineIdToDbStage(stageId);
+    try {
+      await apiPatch(`/api/v1/leads/${dbId}/stage`, { stage: stageLabel, status: stageLabel }, {
+        headers: getAdminCrmHeaders(),
+      });
+      invalidateCache("/api/v1");
+      invalidatePipelineBoardCache("admin");
+      toast.success(`Moved to ${target.label}`);
+    } catch {
+      try {
+        await apiPatch(`/api/dashboard/pipeline/leads/${dbId}`, { stage: stageId });
+        invalidateCache("/api/dashboard");
+        invalidatePipelineBoardCache("admin");
+        toast.success(`Moved to ${target.label}`);
+      } catch (err) {
+        applyLeadUpdate(prevSnapshot);
+        if (moveLeadLocally) {
+          moveLeadLocally(leadId, currentStageId);
+        }
+        toast.error(err?.message || "Couldn't save the move — reverted. Check your connection and try again.");
+      }
+    }
   };
 
   return (
