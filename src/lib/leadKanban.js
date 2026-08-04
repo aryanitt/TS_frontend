@@ -722,8 +722,8 @@ export function getPipelineStageDisplayCounts(
 
   const booked = periodMeetings.filter((m) => resolveMeetingKanbanColumn(m) === "meeting_booked");
   const done = periodMeetings.filter((m) => resolveMeetingKanbanColumn(m) === "meeting_done");
-  counts.meeting_booked = booked.length;
-  counts.meeting_done = done.length;
+  if (booked.length > counts.meeting_booked) counts.meeting_booked = booked.length;
+  if (done.length > counts.meeting_done) counts.meeting_done = done.length;
 
   return counts;
 }
