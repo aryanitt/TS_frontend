@@ -274,14 +274,11 @@ export function isDummyEmployee(emp) {
   if (email.endsWith("@example.com") || email.endsWith("@test.com") || email.endsWith("@demo.com")) return true;
 
   const dummyNames = [
-    "neha patel",
-    "padam gupta",
-    "piyush dhingra",
-    "priya sharma",
-    "ritik verma",
-    "rohan verma",
-    "sushmit verma",
-    "sourav",
+    "test user",
+    "john doe",
+    "jane doe",
+    "dummy employee",
+    "test employee",
   ];
 
   if (dummyNames.includes(name)) return true;

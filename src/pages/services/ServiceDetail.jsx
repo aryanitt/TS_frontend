@@ -11,12 +11,17 @@ import { apiGet, apiDelete, apiPost, apiPut } from "../../lib/api.js";
 import { extractLeadService, cleanServiceName, leadBelongsToService } from "../../lib/servicesRegistry.js";
 
 const DEFAULT_EMPLOYEES = [
-  { id: "1", name: "Sarita", role: "Sales Manager" },
-  { id: "2", name: "Ankit Mehta", role: "Sales Executive" },
-  { id: "3", name: "Priya Sharma", role: "Senior AE" },
-  { id: "4", name: "Rahul Mehta", role: "Account Executive" },
-  { id: "5", name: "Ananya Reddy", role: "SDR" },
-  { id: "6", name: "Vikram Singh", role: "Sales Rep" },
+  { id: "1", name: "Amit Kumar", role: "Sales Manager" },
+  { id: "2", name: "Aryan gupta", role: "sales" },
+  { id: "3", name: "Neha Patel", role: "Sales Executive" },
+  { id: "4", name: "Padam Gupta", role: "Manager" },
+  { id: "5", name: "Piyush Dhingra", role: "Sales Manager" },
+  { id: "6", name: "Priya Sharma", role: "Sales Executive" },
+  { id: "7", name: "Ritik Verma", role: "Sales Manager" },
+  { id: "8", name: "Rohan Verma", role: "Sales Executive" },
+  { id: "9", name: "Sarita", role: "sales manager" },
+  { id: "10", name: "Sourav", role: "sales manager" },
+  { id: "11", name: "Sushmit Verma", role: "Sales Executive" },
 ];
 
 const ICON_MAP = {
@@ -56,10 +61,18 @@ export default function ServiceDetail() {
     let cancelled = false;
     (async () => {
       try {
-        const empRes = await apiGet("/api/v1/employees");
+        const empRes = await apiGet("/api/v1/team/employees", { skipCache: true, cacheTtl: 0 }).catch(() => apiGet("/api/v1/employees", { skipCache: true, cacheTtl: 0 }));
         const list = Array.isArray(empRes) ? empRes : (empRes?.employees || empRes?.data || []);
-        if (list.length > 0 && !cancelled) {
-          setAllEmployees(list.map((e) => ({ id: String(e.id), name: e.name || `Employee ${e.id}`, role: e.role || e.department })));
+        const activeOnly = list.filter((e) => {
+          const s = String(e.status || "active").trim().toLowerCase();
+          return s === "active";
+        });
+        if (!cancelled) {
+          setAllEmployees(activeOnly.map((e) => ({
+            id: String(e.id),
+            name: e.name || `Employee ${e.id}`,
+            role: e.role || e.department || "Sales",
+          })));
         }
       } catch {}
     })();
