@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "./AuthContext.jsx";
+import { getDynamicServicesList } from "../lib/servicesRegistry.js";
 import {
   CURRENT_EMPLOYEE,
   MOCK_EMPLOYEE_ID,
@@ -1243,6 +1244,17 @@ export function EmployeeProvider({ children }) {
     }
   }, [usingApi, leads]);
 
+  const updateEmployeeAvatar = useCallback(async (avatarUrl) => {
+    setEmployee((prev) => (prev ? { ...prev, avatarUrl } : prev));
+    if (!employee?.id) return;
+    try {
+      await apiPut(`/api/v1/employees/${employee.id}`, { avatarUrl }, { headers: getCrmHeaders() });
+      invalidateCache("/api/v1/employee");
+    } catch (err) {
+      toast.error(err.message || "Could not save photo");
+    }
+  }, [employee?.id]);
+
   const refreshTeamEmployees = useCallback(async () => {
     try {
       const empRes = await apiGet("/api/v1/employees", {
@@ -1659,6 +1671,7 @@ export function EmployeeProvider({ children }) {
     updateLeadStage,
     updateLeadTemperature,
     editLeadDetails,
+    updateEmployeeAvatar,
     refreshLeads,
     refreshCalls,
     syncCallyzerData,
@@ -1685,10 +1698,11 @@ export function EmployeeProvider({ children }) {
     reloadWorkspace,
     selectedService,
     setSelectedService,
+    servicesList: getDynamicServicesList([], leads),
   }), [
     employee, tasks, setTasks, createTask, updateTaskStatus, removeTask, refreshTasks,
     followUps, setFollowUps, scheduleFollowUp, completeFollowUp, completeFollowUpWithMom, markFollowUpNotPicked, markFollowUpCallAgain, refreshFollowUps,
-    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, refreshLeads, refreshCalls, syncCallyzerData,
+    syncTaskWithFollowUp, leads, addLead, updateLeadStage, updateLeadTemperature, editLeadDetails, updateEmployeeAvatar, refreshLeads, refreshCalls, syncCallyzerData,
     reassignLead, teamEmployees, refreshTeamEmployees,
     usingApi, calls, setCalls, addCallRecord, startCallyzerCall, activities, addActivityRecord, sops, refreshSops,
     meetingsUpcoming, meetingsHistory, createMeeting, cancelMeeting, refreshMeetings, loading, linkError,
@@ -1719,8 +1733,14 @@ export function EmployeeProvider({ children }) {
   );
 }
 
+const DEFAULT_EMPLOYEE_CONTEXT = {
+  employee: null,
+  selectedService: "All Services",
+  setSelectedService: () => {},
+  servicesList: ["All Services"],
+};
+
 export function useEmployee() {
   const ctx = useContext(EmployeeContext);
-  if (!ctx) throw new Error("useEmployee must be used within EmployeeProvider");
-  return ctx;
+  return ctx || DEFAULT_EMPLOYEE_CONTEXT;
 }

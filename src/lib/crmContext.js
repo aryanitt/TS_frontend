@@ -157,6 +157,7 @@ export function mapApiEmployee(row) {
     phone: row.phone || "",
     department: row.department || "Sales",
     avatarColor: "#2563eb",
+    avatarUrl: row.avatarUrl || row.avatar_url || "",
   };
 }
 

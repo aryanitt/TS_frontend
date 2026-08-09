@@ -154,7 +154,9 @@ function normalizeEmployeeLeadStatus(lead) {
 }
 
 export function apiLeadToEmployee(lead, avatarColors = AVATAR_COLORS) {
-  const name = lead.leadName || lead.lead_name || "Lead";
+  const rawName = lead.leadName || lead.lead_name || lead.name;
+  const phoneNum = lead.phone || lead.phone_number || "";
+  const name = (rawName && rawName.trim().toLowerCase() !== "unknown") ? rawName : (phoneNum || "Lead");
   const id = lead.id;
   const av = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const rawStage = lead.pipelineStage || lead.pipeline_stage || lead.stage || "Lead";
@@ -262,11 +264,37 @@ export function apiEmployeeToAdmin(emp) {
   };
 }
 
+export function isDummyEmployee(emp) {
+  if (!emp) return true;
+  const name = String(emp.name || emp.employeeName || "").trim().toLowerCase();
+  const email = String(emp.email || "").trim().toLowerCase();
+  const idStr = String(emp.id || "").trim().toLowerCase();
+
+  if (idStr.startsWith("mock-") || idStr.startsWith("demo-") || idStr.startsWith("seed-") || idStr.startsWith("test-")) return true;
+  if (email.endsWith("@example.com") || email.endsWith("@test.com") || email.endsWith("@demo.com")) return true;
+
+  const dummyNames = [
+    "neha patel",
+    "padam gupta",
+    "piyush dhingra",
+    "priya sharma",
+    "ritik verma",
+    "rohan verma",
+    "sushmit verma",
+    "sourav",
+  ];
+
+  if (dummyNames.includes(name)) return true;
+
+  return false;
+}
+
 /** Active employees only — excludes inactive/demo rows not shown on Team page. */
 export function filterAssignableEmployees(employees = []) {
   const seen = new Set();
   return (Array.isArray(employees) ? employees : []).filter((emp) => {
     if (!emp?.id) return false;
+    if (isDummyEmployee(emp)) return false;
     const status = String(emp.status || "active").trim().toLowerCase();
     if (status === "inactive") return false;
     const key = String(emp.id);
@@ -379,13 +407,18 @@ export function apiLeadToPipeline(lead) {
     || lead.employeeName
     || "";
 
+  const rawName = lead.leadName || lead.lead_name || lead.name;
+  const phoneNum = lead.phone || lead.phone_number || "";
+  const name = (rawName && rawName.trim().toLowerCase() !== "unknown") ? rawName : (phoneNum || "Lead");
+
   return {
     id: lead.id,
     _dbId: lead.id,
     stage,
     pipelineStage: stageRaw,
     stageOverride: Boolean(lead.stageIsManual ?? lead.stage_is_manual ?? lead.stageOverride),
-    name: lead.leadName || lead.lead_name || "Lead",
+    name,
+    phone: phoneNum,
     company: lead.companyName || lead.company_name || "—",
     value: Number(lead.expectedRevenue ?? lead.expected_revenue ?? 0),
     priority,

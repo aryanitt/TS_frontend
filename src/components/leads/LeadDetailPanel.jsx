@@ -7,13 +7,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LEAD_STATUS_LABELS,
-  EMP_TEAM,
   EMP_LEAD_TEMPERATURES,
   phonesMatchLoose,
 } from "../../data/employeeMock.js";
 import { LeadStatusBadge, AvatarCircle, FormTextarea, BtnPrimary } from "../../employee/components/EmpUI.jsx";
 import CashCollectedPanel from "../CashCollectedPanel.jsx";
-import { CANONICAL_STAGE_LABELS, buildDetailDraft, unwrapApiList } from "../../lib/leadSync.js";
+import { CANONICAL_STAGE_LABELS, buildDetailDraft, unwrapApiList, filterAssignableEmployees, isDummyEmployee } from "../../lib/leadSync.js";
 import { callFromApiLite } from "../../lib/callFromApiLite.js";
 import { formatCallDisplayDate, formatCallDuration, isCallConnected } from "../../lib/callDisplay.js";
 import { formatTelUrl } from "../../lib/phoneUtils.js";
@@ -53,17 +52,55 @@ function normalizeCallForDisplay(call, liveLead) {
   };
 }
 
-function DetailField({ label, value, onChange, readOnly = false, type = "text", options }) {
+const CUSTOM_FIELD_OPTION = "__custom__";
+
+function DetailField({ label, value, onChange, readOnly = false, type = "text", options, allowCustom = false }) {
+  const [customMode, setCustomMode] = useState(
+    allowCustom && Boolean(value) && value !== "—" && !options?.includes(value),
+  );
+
   return (
     <div className={fieldCardClass}>
       <p className={labelClass}>{label}</p>
       {readOnly ? (
         <p className="text-xs font-black text-slate-800 mt-1.5 truncate">{value || "—"}</p>
+      ) : options && customMode ? (
+        <div className="relative">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Type to add new…"
+            autoFocus
+            className={inputClass}
+            style={{ paddingRight: 28 }}
+          />
+          <button
+            type="button"
+            onClick={() => { setCustomMode(false); onChange(""); }}
+            title="Choose from list instead"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            ×
+          </button>
+        </div>
       ) : options ? (
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={inputClass}>
+        <select
+          value={value}
+          onChange={(e) => {
+            if (e.target.value === CUSTOM_FIELD_OPTION) {
+              setCustomMode(true);
+              onChange("");
+              return;
+            }
+            onChange(e.target.value);
+          }}
+          className={inputClass}
+        >
           {options.map((opt) => (
             <option key={opt} value={opt}>{opt}</option>
           ))}
+          {allowCustom && <option value={CUSTOM_FIELD_OPTION}>+ Add new…</option>}
         </select>
       ) : (
         <input
@@ -109,6 +146,7 @@ export default function LeadDetailPanel({
   const [noteSaving, setNoteSaving] = useState(false);
   const [fetchedCalls, setFetchedCalls] = useState([]);
   const [callsLoading, setCallsLoading] = useState(false);
+  const [serviceOptions, setServiceOptions] = useState(CANONICAL_SERVICES);
 
   useEffect(() => {
     setDraft(buildDetailDraft(liveLead));
@@ -118,6 +156,27 @@ export default function LeadDetailPanel({
     () => (variant === "admin" ? getAdminCrmHeaders() : getCrmHeaders()),
     [variant],
   );
+
+  // Use the real service catalog (same source as the New Lead form) instead of
+  // the small hardcoded placeholder list, so this reflects what the business
+  // actually offers.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiGet("/api/services", { headers: crmHeaders, cacheTtl: 30_000 });
+        const names = (data?.services || data?.data || [])
+          .map((s) => s.name || s.title)
+          .filter(Boolean);
+        if (!cancelled && names.length) {
+          setServiceOptions(["—", ...names]);
+        }
+      } catch {
+        // keep defaults
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [crmHeaders]);
 
   useEffect(() => {
     // Always fetch calls from the API for the specific lead so Callyzer
@@ -205,11 +264,9 @@ export default function LeadDetailPanel({
   }, [showReassignment, teamEmployees.length, refreshTeamEmployees]);
 
   const reassignOptions = useMemo(() => {
-    const source = teamEmployees.length
-      ? teamEmployees
-      : EMP_TEAM.map((t, i) => ({ id: i + 1, name: t.name }));
-    const byName = new Map(source.filter((e) => e?.name).map((e) => [e.name, e]));
-    if (currentAssignee && currentAssignee !== "—" && !byName.has(currentAssignee)) {
+    const source = filterAssignableEmployees(teamEmployees);
+    const byName = new Map(source.filter((e) => e?.name && !isDummyEmployee(e)).map((e) => [e.name, e]));
+    if (currentAssignee && currentAssignee !== "—" && !byName.has(currentAssignee) && !isDummyEmployee({ name: currentAssignee })) {
       byName.set(currentAssignee, { id: `assignee-${currentAssignee}`, name: currentAssignee });
     }
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -262,8 +319,7 @@ export default function LeadDetailPanel({
   };
 
   const handleManualReassign = async (newAssignee) => {
-    const emp = teamEmployees.find((e) => e.name === newAssignee)
-      || EMP_TEAM.find((t) => t.name === newAssignee);
+    const emp = filterAssignableEmployees(teamEmployees).find((e) => e.name === newAssignee);
     if (!emp?.id) {
       toast.error("Could not find employee to assign");
       return;
@@ -279,9 +335,7 @@ export default function LeadDetailPanel({
   };
 
   const handleAutoReassign = async () => {
-    const pool = teamEmployees.length
-      ? teamEmployees.filter((e) => e.name !== currentAssignee)
-      : EMP_TEAM.filter((t) => t.name !== currentAssignee);
+    const pool = filterAssignableEmployees(teamEmployees).filter((e) => e.name !== currentAssignee);
     if (pool.length === 0) return;
     const randomChoice = pool[Math.floor(Math.random() * pool.length)];
     const ok = await reassignLead(liveLead.id, randomChoice.id, randomChoice.name, "auto");
@@ -419,7 +473,8 @@ export default function LeadDetailPanel({
           label="Service"
           value={draft.service || "—"}
           onChange={patchDraft("service")}
-          options={CANONICAL_SERVICES}
+          options={serviceOptions}
+          allowCustom
           readOnly={readOnly}
         />
         <DetailField label="City" value={draft.city} onChange={patchDraft("city")} readOnly={readOnly} />
