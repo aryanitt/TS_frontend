@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useDeferredValue, memo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Kanban, Flame, TrendingUp, ThumbsDown, Wallet } from "lucide-react";
+import { Search, Plus, Kanban, Flame, TrendingUp, ThumbsDown, Wallet, Phone } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, Badge, StatCard } from "../../components/Primitives.jsx";
 import AddLeadDrawer from "../../components/AddLeadDrawer.jsx";
+import { formatTelUrl } from "../../lib/phoneUtils.js";
 import { useEmployee } from "../../context/EmployeeContext.jsx";
 import {
   EMP_KANBAN_STAGES,
@@ -42,11 +43,9 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
   const phone = lead.phone || lead.phone_number || "";
   const displayName = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
     ? lead.name
-    : (phone || lead.company || "No Number");
+    : (phone || "No Number");
 
-  const displaySub = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
-    ? (lead.company || phone || "—")
-    : (lead.company && lead.company !== "—" && lead.company !== phone ? lead.company : "—");
+  const displayService = lead.service || lead.requirements || lead.serviceName || lead.service_name || "—";
 
   return (
     <div
@@ -82,8 +81,24 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
         )}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{displayName}</p>
-            <p className="text-[10px] text-slate-500 truncate mt-0.5">{displaySub}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition flex-1 min-w-0">{displayName}</p>
+              {phone ? (
+                <button
+                  type="button"
+                  title={`Call ${displayName}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const url = formatTelUrl(phone);
+                    if (url) window.location.href = url;
+                  }}
+                  className="sm:hidden inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 shrink-0 transition active:scale-95 shadow-sm"
+                >
+                  <Phone className="w-2.5 h-2.5 fill-rose-600 text-rose-600" />
+                </button>
+              ) : null}
+            </div>
+            <p className="text-[10px] text-slate-500 truncate mt-0.5">{displayService}</p>
           </div>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
             <LeadStatusBadge status={lead.status} label={LEAD_STATUS_LABELS[lead.status] || lead.stage || "Lead"} />
@@ -437,14 +452,13 @@ export default function EmployeeLeads() {
 
   const getStagePillCount = (stageId, columnLeads) => getPipelineStagePillCount(stageId, { grouped }) || columnLeads.length;
 
-  const oddLeadStats = 5 % 2 === 1;
-  const leadStatSpan = (index) => (oddLeadStats && index === 0 ? "col-span-2 sm:col-span-1" : "col-span-1");
+  const leadStatSpan = () => "col-span-1";
 
   return (
     <div className="space-y-3 sm:space-y-4 page-shell min-w-0 animate-fade-in">
       <GlassCard className="p-3 sm:p-4 space-y-3 sm:space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-2.5">
-          <div className={`min-w-0 ${leadStatSpan(0)}`}>
+          <div className="min-w-0 col-span-1">
           <StatCard
             label="Pipeline Value"
             value={formatEmpPipelineValue(summary.value)}
@@ -455,7 +469,7 @@ export default function EmployeeLeads() {
             sub=""
           />
           </div>
-          <div className={`min-w-0 ${leadStatSpan(1)}`}>
+          <div className="min-w-0 col-span-1">
           <StatCard
             label="Total Leads"
             value={String(summary.total)}
@@ -464,9 +478,16 @@ export default function EmployeeLeads() {
             iconColor="text-rose-600"
             change={`${summary.active} active`}
             sub=""
+            corner={
+              summary.hot > 0 ? (
+                <span className="sm:hidden inline-flex items-center gap-0.5 text-[9px] font-black text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full shadow-sm">
+                  🔥 {summary.hot}
+                </span>
+              ) : null
+            }
           />
           </div>
-          <div className={`min-w-0 ${leadStatSpan(2)}`}>
+          <div className="min-w-0 hidden sm:block col-span-1">
           <StatCard
             label="Hot Leads"
             value={String(summary.hot)}
@@ -477,7 +498,7 @@ export default function EmployeeLeads() {
             sub=""
           />
           </div>
-          <div className={`min-w-0 ${leadStatSpan(3)}`}>
+          <div className="min-w-0 col-span-1">
           <StatCard
             label="Not Interested"
             value={String(summary.notInterested)}
@@ -488,7 +509,7 @@ export default function EmployeeLeads() {
             sub=""
           />
           </div>
-          <div className={`min-w-0 ${leadStatSpan(4)}`}>
+          <div className="min-w-0 col-span-1">
           <StatCard
             label="Total Cash Collected"
             value={formatCashCard(totalCash)}

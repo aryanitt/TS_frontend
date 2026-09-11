@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useDeferredValue, memo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Search, Plus, Kanban, Flame, TrendingUp, Thermometer, Snowflake, ThumbsDown } from "lucide-react";
+import { Search, Plus, Kanban, Flame, TrendingUp, Thermometer, Snowflake, ThumbsDown, Phone } from "lucide-react";
 import toast from "react-hot-toast";
 import { GlassCard, Badge, StatCard } from "../components/Primitives.jsx";
 import AddLeadDrawer from "../components/AddLeadDrawer.jsx";
 import PipelineLeadDrawer from "../components/pipeline/PipelineLeadDrawer.jsx";
+import { formatTelUrl } from "../lib/phoneUtils.js";
 import {
   PIPELINE_STAGES,
   PRIORITY_BADGE,
@@ -49,11 +50,9 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
   const phone = lead.phone || lead.phone_number || "";
   const displayName = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
     ? lead.name
-    : (phone || lead.company || "No Number");
+    : (phone || "No Number");
 
-  const displaySub = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
-    ? (lead.company || phone || "—")
-    : (lead.company && lead.company !== "—" && lead.company !== phone ? lead.company : "—");
+  const displayService = lead.service || lead.requirements || lead.serviceName || lead.service_name || "—";
 
   return (
     <div
@@ -84,8 +83,24 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
       >
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition">{displayName}</p>
-            <p className="text-[10px] text-slate-500 truncate mt-0.5">{displaySub}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition flex-1 min-w-0">{displayName}</p>
+              {phone ? (
+                <button
+                  type="button"
+                  title={`Call ${displayName}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const url = formatTelUrl(phone);
+                    if (url) window.location.href = url;
+                  }}
+                  className="sm:hidden inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 shrink-0 transition active:scale-95 shadow-sm"
+                >
+                  <Phone className="w-2.5 h-2.5 fill-rose-600 text-rose-600" />
+                </button>
+              ) : null}
+            </div>
+            <p className="text-[10px] text-slate-500 truncate mt-0.5">{displayService}</p>
           </div>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
             <Badge tone={priorityTone}>{lead.priority}</Badge>
@@ -465,16 +480,25 @@ export default function Pipeline() {
             iconColor="text-rose-600"
             change={leadsLoading && !leads.length ? "Loading" : ""}
             sub={leadsLoading && !leads.length ? "fetching leads" : ""}
+            corner={
+              summary.hot > 0 ? (
+                <span className="sm:hidden inline-flex items-center gap-0.5 text-[9px] font-black text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full shadow-sm">
+                  🔥 {summary.hot}
+                </span>
+              ) : null
+            }
           />
-          <StatCard
-            label="Hot Leads"
-            value={String(summary.hot)}
-            icon={Flame}
-            iconBg="bg-red-50"
-            iconColor="text-red-600"
-            change="High intent"
-            sub=""
-          />
+          <div className="hidden sm:block">
+            <StatCard
+              label="Hot Leads"
+              value={String(summary.hot)}
+              icon={Flame}
+              iconBg="bg-red-50"
+              iconColor="text-red-600"
+              change="High intent"
+              sub=""
+            />
+          </div>
           <StatCard
             label="Warm Leads"
             value={String(summary.warm)}
