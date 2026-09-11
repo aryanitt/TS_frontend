@@ -40,10 +40,13 @@ function isDraggablePipelineLead(lead) {
 const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, onDragStart, onDragEnd, isNewAssigned, onMoveStage, currentStage }) {
   const canDrag = isDraggablePipelineLead(lead);
 
-  const phone = lead.phone || lead.phone_number || "";
-  const displayName = (lead.name && lead.name.trim().toLowerCase() !== "unknown")
-    ? lead.name
-    : (phone || "No Number");
+  const rawPhone = lead.phone || lead.phone_number || "";
+  const cleanDigits = String(rawPhone).replace(/\D/g, "");
+  const formattedPhone = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : (rawPhone || "No Number");
+
+  const rawName = String(lead.name || "").trim();
+  const hasValidName = rawName && !/^unknown$/i.test(rawName) && rawName !== "Lead";
+  const displayName = hasValidName ? rawName : formattedPhone;
 
   const displayService = lead.service || lead.requirements || lead.serviceName || lead.service_name || "—";
 
@@ -58,7 +61,7 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
         startLeadCardDrag(e, lead.id, onDragStart);
       }}
       onDragEnd={onDragEnd}
-      className={`rounded-xl border border-rose-100 bg-white transition group shrink-0 w-[min(72vw,200px)] sm:w-full sm:shrink snap-start ${
+      className={`rounded-xl border border-rose-100 bg-white transition group shrink-0 w-[min(78vw,215px)] sm:w-full sm:shrink snap-start ${
         canDrag ? "cursor-grab active:cursor-grabbing select-none" : ""
       } ${isDragging ? "opacity-40 scale-[0.98]" : "hover:border-rose-300 hover:shadow-md"}`}
     >
@@ -79,53 +82,58 @@ const LeadCard = memo(function LeadCard({ lead, lastLabel, onOpen, isDragging, o
             Admin assigned
           </span>
         )}
-        <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-start justify-between gap-1.5 mb-1.5">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition flex-1 min-w-0">{displayName}</p>
-              {phone ? (
-                <button
-                  type="button"
-                  title={`Call ${displayName}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const url = formatTelUrl(phone);
-                    if (url) window.location.href = url;
-                  }}
-                  className="sm:hidden inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 shrink-0 transition active:scale-95 shadow-sm"
-                >
-                  <Phone className="w-2.5 h-2.5 fill-rose-600 text-rose-600" />
-                </button>
-              ) : null}
-            </div>
-            <p className="text-[10px] text-slate-500 truncate mt-0.5">{displayService}</p>
+            <p className="text-xs font-black text-slate-900 truncate group-hover:text-rose-800 transition tabular-nums" title={displayName}>
+              {displayName}
+            </p>
+            <p className="text-[10px] text-slate-500 truncate mt-0.5" title={displayService}>
+              {displayService}
+            </p>
           </div>
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            <LeadStatusBadge status={lead.status} label={LEAD_STATUS_LABELS[lead.status] || lead.stage || "Lead"} />
-            {canDrag && onMoveStage && (
-              <select
-                value={currentStage || lead.pipelineStage || lead.stage || ""}
-                onChange={(e) => {
+          <div className="flex items-center gap-1 shrink-0">
+            {rawPhone ? (
+              <button
+                type="button"
+                title={`Call ${displayName}`}
+                onClick={(e) => {
                   e.stopPropagation();
-                  onMoveStage(lead.id, e.target.value);
+                  const url = formatTelUrl(rawPhone);
+                  if (url) window.location.href = url;
                 }}
-                onClick={(e) => e.stopPropagation()}
-                className="block sm:hidden bg-rose-50/50 hover:bg-rose-50 text-[9px] font-black text-rose-700 border border-rose-200/80 rounded px-1.5 py-0.5 outline-none appearance-none pr-4"
-                style={{
-                  background: 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23be123c\' stroke-width=\'3.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 3px center/8px',
-                  paddingRight: '12px'
-                }}
+                className="sm:hidden inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 shrink-0 transition active:scale-95 shadow-sm"
               >
-                <option value="" disabled style={{ color: '#64748b', backgroundColor: '#ffffff' }}>Move...</option>
-                {EMP_KANBAN_STAGES.map((s) => (
-                  <option key={s.id} value={s.id} style={{ color: '#1e293b', backgroundColor: '#ffffff' }}>
-                    {s.id === "conversation_2min" ? "Convo" : s.label}
-                  </option>
-                ))}
-              </select>
-            )}
+                <Phone className="w-3 h-3 fill-rose-600 text-rose-600" />
+              </button>
+            ) : null}
+            <LeadStatusBadge status={lead.status} label={LEAD_STATUS_LABELS[lead.status] || lead.stage || "Lead"} />
           </div>
         </div>
+
+        {canDrag && onMoveStage && (
+          <div className="block sm:hidden mb-2">
+            <select
+              value={currentStage || lead.pipelineStage || lead.stage || ""}
+              onChange={(e) => {
+                e.stopPropagation();
+                onMoveStage(lead.id, e.target.value);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full bg-rose-50/50 hover:bg-rose-50 text-[9px] font-black text-rose-700 border border-rose-200/80 rounded px-1.5 py-0.5 outline-none appearance-none pr-4"
+              style={{
+                background: 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23be123c\' stroke-width=\'3.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 3px center/8px',
+                paddingRight: '12px'
+              }}
+            >
+              <option value="" disabled style={{ color: '#64748b', backgroundColor: '#ffffff' }}>Move stage...</option>
+              {EMP_KANBAN_STAGES.map((s) => (
+                <option key={s.id} value={s.id} style={{ color: '#1e293b', backgroundColor: '#ffffff' }}>
+                  {s.id === "conversation_2min" ? "Convo" : s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="flex items-center justify-between pt-2 border-t border-rose-50">
           <span className="text-xs font-black text-rose-700 tabular-nums">{lead.budget}</span>
           <span className="text-[9px] font-medium text-slate-400">{lastLabel}</span>
